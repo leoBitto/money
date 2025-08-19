@@ -53,7 +53,7 @@ cursor = conn.cursor()
 # Assumiamo una tabella 'storico_prezzi' con colonne: ticker, data, prezzo
 for index, row in df_to_insert.iterrows():
     cursor.execute("""
-        INSERT INTO storico_prezzi (ticker, data, prezzo)
+        INSERT INTO universe (ticker, data, prezzo)
         VALUES (%s, %s, %s)
         ON CONFLICT (ticker, data) DO UPDATE SET prezzo = EXCLUDED.prezzo;
     """, (row['Ticker'], row['Data'], row['Prezzo']))

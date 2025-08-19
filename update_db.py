@@ -33,6 +33,13 @@ data = worksheet.get_all_records()
 df = pd.DataFrame(data)
 df['Data'] = datetime.today().strftime('%Y-%m-%d')
 df_to_insert = df[['Ticker', 'Data', 'Prezzo']]
+df_to_insert['Prezzo'] = (
+    df_to_insert['Prezzo']
+    .astype(str)                      # assicura che siano stringhe
+    .str.replace('$', '', regex=False)  # rimuove il simbolo del dollaro
+    .astype(float)                    # converte in float
+)
+
 
 # --- 4. Leggi i secret del DB ---
 SECRET_DB_NAME = "projects/trading-469418/secrets/db_info/versions/latest"

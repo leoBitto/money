@@ -1,50 +1,47 @@
-# %%
+
 import gspread
-from google.auth import default
-from google.auth.transport.requests import Request
+from google.oauth2.service_account import Credentials
+from google.cloud import secretmanager
 import pandas as pd
 from datetime import datetime
 import os
+import json
 
-# %%
-# --- 1. Configurazione credenziali tramite ADC (Service Account della VM) ---
-# Non serve il file JSON, la VM impersona già la SA con i permessi necessari
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets",
-          "https://www.googleapis.com/auth/drive"]
+# --- 1. Leggi il JSON della SA dal Secret Manager ---
+SECRET_NAME = "projects/trading-469418/secrets/service_account_json/versions/latest"
 
-creds, project = default(scopes=SCOPES)
+client_sm = secretmanager.SecretManagerServiceClient()
+response = client_sm.access_secret_version(name=SECRET_NAME)
+service_account_info = json.loads(response.payload.data.decode("UTF-8"))
 
-# Aggiorna il token se necessario
-creds.refresh(Request())
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
+creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
 client = gspread.authorize(creds)
 
-# %%
 # --- 2. Apri lo Sheet ---
 SPREADSHEET_ID = '1Uh3S3YCyvupZ5yZh2uDi0XYGaZIkEkupxsYed6xRxgA'
 sheet = client.open_by_key(SPREADSHEET_ID)
 worksheet = sheet.sheet1
 
-# %%
 # --- 3. Leggi i dati ---
 data = worksheet.get_all_records()
 
-# %%
 # --- 4. Trasforma in DataFrame e aggiungi data corrente ---
 df = pd.DataFrame(data)
 df['Data'] = datetime.today().strftime('%Y-%m-%d')
 df_csv = df[['Ticker', 'Data', 'Prezzo']]
 
-# %%
 CSV_FILE = './storico_prezzi.csv'
 
-# Controlla se il file esiste
 if os.path.exists(CSV_FILE):
     df_existing = pd.read_csv(CSV_FILE, sep=';')
     df_csv = pd.concat([df_existing, df_csv], ignore_index=True)
 else:
     df_csv = df_csv.copy()
 
-# Salva/aggiorna il CSV
 df_csv.to_csv(CSV_FILE, index=False, sep=';')
 print(f"CSV aggiornato: {CSV_FILE}")

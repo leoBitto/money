@@ -1,0 +1,20 @@
+# Ambiente virtuale Python
+venv/
+.env/
+__pycache__/
+*.pyc
+
+# File credenziali GCP
+*.json
+
+# Dati locali
+*.csv
+*.txt
+
+# Log
+*.log
+
+# Config personali
+.DS_Store
+.idea/
+.vscode/

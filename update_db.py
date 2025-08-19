@@ -8,7 +8,7 @@ import os
 import json
 
 # --- 1. Leggi il JSON della SA dal Secret Manager ---
-SECRET_NAME = "projects/trading-469418/secrets/service_account_json/versions/latest"
+SECRET_NAME = "projects/trading-469418/secrets/service_account/versions/latest"
 
 client_sm = secretmanager.SecretManagerServiceClient()
 response = client_sm.access_secret_version(name=SECRET_NAME)

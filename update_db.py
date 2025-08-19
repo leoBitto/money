@@ -32,7 +32,7 @@ data = worksheet.get_all_records()
 # --- 4. Trasforma in DataFrame e aggiungi data corrente ---
 df = pd.DataFrame(data)
 df['Data'] = datetime.today().strftime('%Y-%m-%d')
-df_to_insert = df[['Ticker', 'Data', 'Prezzo']]
+df_to_insert = df[['Ticker', 'Data', 'Prezzo']].copy()
 df_to_insert['Prezzo'] = (
     df_to_insert['Prezzo']
     .astype(str)                      # assicura che siano stringhe

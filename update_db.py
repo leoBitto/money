@@ -37,6 +37,8 @@ df_to_insert['Prezzo'] = (
     df_to_insert['Prezzo']
     .astype(str)                      # assicura che siano stringhe
     .str.replace('$', '', regex=False)  # rimuove il simbolo del dollaro
+    .str.replace('.', '', regex=False)    # rimuove eventuali punti come migliaia
+    .str.replace(',', '.', regex=False)   # trasforma la virgola decimale in punto
     .astype(float)                    # converte in float
 )
 

@@ -32,7 +32,7 @@ data = worksheet.get_all_records()
 # --- 4. Trasforma in DataFrame e aggiungi data corrente ---
 df = pd.DataFrame(data)
 df['Data'] = datetime.today().strftime('%Y-%m-%d')
-df_csv = df[['Ticker', 'Data', 'Prezzo']]
+df_to_insert = df[['Ticker', 'Data', 'Prezzo']]
 
 # --- 4. Leggi i secret del DB ---
 SECRET_DB_NAME = "projects/trading-469418/secrets/db_info/versions/latest"

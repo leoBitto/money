@@ -1,11 +1,10 @@
-
 import gspread
 from google.oauth2.service_account import Credentials
 from google.cloud import secretmanager
 import pandas as pd
 from datetime import datetime
-import os
 import json
+import psycopg2
 
 # --- 1. Leggi il JSON della SA dal Secret Manager ---
 SECRET_NAME = "projects/trading-469418/secrets/service_account/versions/latest"

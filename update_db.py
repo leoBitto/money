@@ -35,13 +35,32 @@ df = pd.DataFrame(data)
 df['Data'] = datetime.today().strftime('%Y-%m-%d')
 df_csv = df[['Ticker', 'Data', 'Prezzo']]
 
-CSV_FILE = './storico_prezzi.csv'
+# --- 4. Leggi i secret del DB ---
+SECRET_DB_NAME = "projects/trading-469418/secrets/db_info/versions/latest"
+response_db = client_sm.access_secret_version(name=SECRET_DB_NAME)
+db_info = json.loads(response_db.payload.data.decode("UTF-8"))
 
-if os.path.exists(CSV_FILE):
-    df_existing = pd.read_csv(CSV_FILE, sep=';')
-    df_csv = pd.concat([df_existing, df_csv], ignore_index=True)
-else:
-    df_csv = df_csv.copy()
+# Connessione PostgreSQL
+conn = psycopg2.connect(
+    host=db_info["host"],
+    port=db_info["port"],
+    database=db_info["database"],
+    user=db_info["user"],
+    password=db_info["password"]
+)
+cursor = conn.cursor()
 
-df_csv.to_csv(CSV_FILE, index=False, sep=';')
-print(f"CSV aggiornato: {CSV_FILE}")
+# --- 5. Scrivi i dati sul DB ---
+# Assumiamo una tabella 'storico_prezzi' con colonne: ticker, data, prezzo
+for index, row in df_to_insert.iterrows():
+    cursor.execute("""
+        INSERT INTO storico_prezzi (ticker, data, prezzo)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (ticker, data) DO UPDATE SET prezzo = EXCLUDED.prezzo;
+    """, (row['Ticker'], row['Data'], row['Prezzo']))
+
+conn.commit()
+cursor.close()
+conn.close()
+
+print(f"{len(df_to_insert)} righe aggiornate su PostgreSQL")

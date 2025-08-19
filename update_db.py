@@ -41,11 +41,11 @@ db_info = json.loads(response_db.payload.data.decode("UTF-8"))
 
 # Connessione PostgreSQL
 conn = psycopg2.connect(
-    host=db_info["host"],
-    port=db_info["port"],
-    database=db_info["database"],
-    user=db_info["user"],
-    password=db_info["password"]
+    host=db_info["DB_HOST"],
+    port=db_info["DB_PORT"],
+    database=db_info["DB_NAME"],
+    user=db_info["DB_USER"],
+    password=db_info["DB_PASSWORD"]
 )
 cursor = conn.cursor()
 

@@ -2,6 +2,7 @@
 import json
 from google.cloud import secretmanager
 import psycopg2
+from tabulate import tabulate  # pip install tabulate
 
 # --- 1. Leggi il secret DB dal Secret Manager ---
 SECRET_DB_NAME = "projects/trading-469418/secrets/db_info/versions/latest"
@@ -19,14 +20,22 @@ conn = psycopg2.connect(
 )
 cursor = conn.cursor()
 
-# --- 3. Creazione tabella universe ---
+# --- 3. Leggi la tabella universe ---
 cursor.execute("""
-select *
-from universe
-
+SELECT *
+FROM universe;
 """)
 
-conn.commit()
+# Recupera i dati
+rows = cursor.fetchall()
+
+# Recupera i nomi delle colonne
+columns = [desc[0] for desc in cursor.description]
+
+# Stampa i risultati come tabella
+print(tabulate(rows, headers=columns, tablefmt="psql"))
+
+# Chiudi connessione
 cursor.close()
 conn.close()
 

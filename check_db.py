@@ -23,7 +23,7 @@ cursor = conn.cursor()
 cursor.execute("""
 select *
 from universe
-);
+
 """)
 
 conn.commit()

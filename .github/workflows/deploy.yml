@@ -1,0 +1,27 @@
+name: Deploy to VM
+
+on:
+  push:
+    branches:
+      - main  # il branch che vuoi monitorare
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.8.1
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Deploy code and restart service
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "
+          cd ${{ secrets.SERVER_PATH }}
+          git pull origin main
+          sudo systemctl restart ${{ secrets.SERVICE_NAME }}
+        "

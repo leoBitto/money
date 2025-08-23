@@ -9,7 +9,6 @@ __pycache__/
 
 # Dati locali
 *.csv
-*.txt
 
 # Log
 *.log

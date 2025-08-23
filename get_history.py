@@ -68,7 +68,7 @@ cursor = conn.cursor()
 
 # --- 6. Inserisci in DB evitando duplicati ---
 insert_query = """
-    INSERT INTO storico_prezzi (ticker, data, prezzo)
+    INSERT INTO universe (ticker, data, prezzo)
     VALUES (%s, %s, %s)
     ON CONFLICT (ticker, data) DO NOTHING;
 """

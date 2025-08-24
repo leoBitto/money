@@ -2,176 +2,156 @@
 
 from scripts.trading.generate_signals import generate_signals, generate_all_strategies_signals
 from scripts.trading import strategies
+from scripts.reports.generate_weekly_signals_report import generate_weekly_signals_report
 import pandas as pd
 from datetime import datetime, timedelta
 
-def test_single_strategy():
+
+def test_weekly_report():
     """
-    Test function to generate signals for a single strategy on a given date.
+    Test the weekly signals report generation.
     """
-    print("=" * 50)
-    print("🔍 TESTING SINGLE STRATEGY - Moving Average Crossover")
+    print("\n" + "=" * 50)
+    print("📄 TESTING WEEKLY REPORT")
     print("=" * 50)
     
     try:
-        # Test con parametri di default
-        df = generate_signals(
-            strategy_func=strategies.moving_average_crossover, 
-            date='2025-08-23'
-        )
-        print(f"✅ Segnali generati per {len(df)} ticker")
-        print(f"📊 Distribuzione segnali:")
-        print(df['signal'].value_counts())
-        print(f"\n📋 Prime 10 righe:")
-        print(df.head(10))
+        test_date = '2025-08-23'
+        print(f"Generating weekly report for date: {test_date}")
         
-        # Test con parametri personalizzati
-        print(f"\n🔧 Test con parametri personalizzati (MA 10-30)...")
-        df_custom = generate_signals(
-            strategy_func=strategies.moving_average_crossover, 
-            date='2025-08-23',
-            short_window=10,
-            long_window=30
-        )
-        print(f"✅ Segnali generati: {len(df_custom)} ticker")
-        print(f"📊 Distribuzione segnali personalizzati:")
-        print(df_custom['signal'].value_counts())
+        results = generate_weekly_signals_report(test_date)
+        
+        successful = sum(1 for url in results.values() if url)
+        total = len(results)
+        
+        print(f"✅ Report settimanale completato!")
+        print(f"📊 Successo: {successful}/{total} report generati")
+        
+        if results:
+            print(f"\n📋 Dettaglio report:")
+            for strategy, url in results.items():
+                if url:
+                    print(f"   ✅ {strategy}")
+                    print(f"      🔗 {url}")
+                else:
+                    print(f"   ❌ {strategy}: Errore o nessun dato")
+        
+        return successful > 0
         
     except Exception as e:
-        print(f"❌ Errore nel test singola strategia: {e}")
+        print(f"❌ Errore nel generare il report settimanale: {e}")
+        return False
 
-def test_single_strategy_specific_tickers():
+def test_weekly_report_dry_run():
     """
-    Test con ticker specifici
+    Test "dry run" - verifica che tutto funzioni senza creare report reali
     """
     print("\n" + "=" * 50)
-    print("🎯 TESTING STRATEGY CON TICKER SPECIFICI - rsi strategy")
+    print("🧪 TESTING WEEKLY REPORT DRY RUN")
     print("=" * 50)
-    
-    # Lista di ticker di esempio (modifica secondo i tuoi dati)
-    test_tickers = ["AAPL", "GOOGL", "MSFT", "TSLA", "AMZN"]
     
     try:
-        df = generate_signals(
-            strategy_func=strategies.rsi_strategy,
-            date='2025-08-23',
-            tickers=test_tickers,
-            period=14,
-            overbought=70,
-            oversold=30
+        # Import delle funzioni necessarie
+        from scripts.reports.generate_weekly_signals_report import (
+            setup_google_client, 
+            get_strategy_functions
         )
-        print(f"✅ Segnali RSI per {len(df)} ticker specifici")
-        print(f"📊 Distribuzione segnali:")
-        print(df['signal'].value_counts())
-        print(f"\n📋 Risultati completi:")
-        print(df)
         
-    except Exception as e:
-        print(f"❌ Errore nel test ticker specifici: {e}")
-
-def test_manual_strategies():
-    """
-    Test manuale delle singole strategie con controllo più dettagliato
-    """
-    print("\n" + "=" * 50)
-    print("🔧 TESTING MANUAL STRATEGIES")
-    print("=" * 50)
-    
-    strategies_to_test = [
-        {
-            'name': 'Moving Average Crossover',
-            'func': strategies.moving_average_crossover,
-            'params': {'short_window': 5, 'long_window': 15}
-        },
-        {
-            'name': 'RSI Strategy', 
-            'func': strategies.rsi_strategy,
-            'params': {'period': 14, 'overbought': 75, 'oversold': 25}
-        },
-        {
-            'name': 'Breakout Strategy',
-            'func': strategies.breakout_strategy,
-            'params': {'lookback': 20}
+        # Test connessione Google
+        print("🔗 Testando connessione Google Sheets...")
+        gc = setup_google_client()
+        print("✅ Connessione Google Sheets OK")
+        
+        # Test recupero strategie
+        print("📈 Recuperando strategie...")
+        strategies_list = get_strategy_functions()
+        print(f"✅ Trovate {len(strategies_list)} strategie")
+        for name, func in strategies_list:
+            print(f"   - {name}")
+        
+        # Test generazione segnali (senza creare Google Sheets)
+        print(f"\n🧮 Testando generazione segnali...")
+        test_date = '2025-08-23'
+        
+        default_params = {
+            'moving_average_crossover': {'short_window': 3, 'long_window': 5},
+            'rsi_strategy': {'period': 14, 'overbought': 70, 'oversold': 30},
+            'breakout_strategy': {'lookback': 20}
         }
-    ]
-
-    for strategy_info in strategies_to_test:
-        print(f"\n📈 Testing {strategy_info['name']}...")
-        try:
-            df = generate_signals(
-                strategy_func=strategy_info['func'],
-                date='2025-08-23',
-                **strategy_info['params']
-            )
-            
-            print(f"   ✅ Ticker processati: {len(df)}")
-            signal_dist = df['signal'].value_counts()
-            total_signals = len(df)
-            
-            for signal_val in [-1, 0, 1]:
-                count = signal_dist.get(signal_val, 0)
-                percentage = (count / total_signals * 100) if total_signals > 0 else 0
-                signal_name = {-1: 'Sell', 0: 'Hold', 1: 'Buy'}[signal_val]
-                print(f"   {signal_name}: {count} ({percentage:.1f}%)")
+        
+        all_good = True
+        for strategy_name, strategy_func in strategies_list:
+            try:
+                params = default_params.get(strategy_name, {})
+                df_signals = generate_signals(strategy_func, test_date, **params)
                 
-        except Exception as e:
-            print(f"   ❌ Errore: {e}")
+                if not df_signals.empty:
+                    signal_counts = df_signals['signal'].value_counts()
+                    print(f"   ✅ {strategy_name}: {len(df_signals)} ticker, "
+                          f"Buy: {signal_counts.get(1, 0)}, "
+                          f"Hold: {signal_counts.get(0, 0)}, " 
+                          f"Sell: {signal_counts.get(-1, 0)}")
+                else:
+                    print(f"   ⚠️  {strategy_name}: Nessun dato disponibile")
+                    
+            except Exception as e:
+                print(f"   ❌ {strategy_name}: {e}")
+                all_good = False
+        
+        if all_good:
+            print(f"\n✅ Dry run completato con successo!")
+            print(f"🚀 Tutto pronto per generare i report reali.")
+        else:
+            print(f"\n⚠️  Dry run completato con alcuni errori.")
+            
+        return all_good
+        
+    except Exception as e:
+        print(f"❌ Errore nel dry run: {e}")
+        return False
 
-def test_date_range():
+def test_weekly_report_with_custom_date():
     """
-    Test con diverse date per vedere l'evoluzione dei segnali
+    Test del report con date personalizzate
     """
     print("\n" + "=" * 50)
-    print("📅 TESTING DATE RANGE")
+    print("📅 TESTING WEEKLY REPORT - CUSTOM DATES")
     print("=" * 50)
     
-    # Test con diverse date
     test_dates = [
         '2025-08-20',
-        '2025-08-21', 
+        '2025-08-21',
         '2025-08-22',
         '2025-08-23'
     ]
     
     for test_date in test_dates:
-        print(f"\n📅 Data: {test_date}")
+        print(f"\n📅 Testando data: {test_date}")
         try:
-            df = generate_signals(
-                strategy_func=strategies.moving_average_crossover,
-                date=test_date,
-                short_window=3,
-                long_window=5
-            )
+            results = generate_weekly_signals_report(test_date)
+            successful = sum(1 for url in results.values() if url)
+            print(f"   📊 Risultato: {successful}/{len(results)} report generati")
             
-            if not df.empty:
-                signal_counts = df['signal'].value_counts()
-                print(f"   Ticker: {len(df)}, "
-                      f"Buy: {signal_counts.get(1, 0)}, "
-                      f"Hold: {signal_counts.get(0, 0)}, "
-                      f"Sell: {signal_counts.get(-1, 0)}")
-            else:
-                print("   ❌ Nessun dato disponibile")
-                
         except Exception as e:
-            print(f"   ❌ Errore: {e}")
-
+            print(f"   ❌ Errore per data {test_date}: {e}")
 
 if __name__ == "__main__":
-    print("🚀 STARTING TRADING SIGNALS TESTS")
+
     print("=" * 60)
+
     
-    # Commenta/decommenta quello che vuoi testare
+    # === TESTS REPORT ===
+    # Test dry run (CONSIGLIATO per iniziare - non crea report reali)
+    test_weekly_report_dry_run()
     
-    # Test base
-    test_single_strategy()
+    # Test report settimanale con date diverse
+    test_weekly_report_with_custom_date()
     
-    # Test con ticker specifici
-    test_single_strategy_specific_tickers()
-    
-    # Test manuale dettagliato
-    test_manual_strategies()
-    
-    # Test con diverse date
-    test_date_range()
+    # Test report settimanale completo (ATTENZIONE: crea report reali su Google Drive!)
+    test_weekly_report()
     
     print(f"\n🎉 TESTS COMPLETED!")
+    print(f"\n💡 SUGGERIMENTI:")
+    print(f"   - Per i primi test usa 'test_report_dry_run()'")
+    print(f"   - I test report creano files reali su Google Drive!")
+    print(f"   - Decommenta gradualmente i test che ti servono")

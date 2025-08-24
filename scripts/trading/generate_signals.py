@@ -62,7 +62,7 @@ def fetch_universe_data(conn, tickers: list, end_date: str) -> pd.DataFrame:
     cursor.close()
     return df
 
-def generate_signals(strategy_func: Callable, tickers: list, end_date: str) -> pd.DataFrame:
+def generate_signals(strategy_func: Callable, tickers: list, date: str) -> pd.DataFrame:
     """
     Generate trading signals for a given strategy and tickers up to end_date.
     
@@ -72,7 +72,7 @@ def generate_signals(strategy_func: Callable, tickers: list, end_date: str) -> p
         Function from strategies module that computes signals. Must accept DataFrame of historical data.
     tickers : list
         List of tickers to evaluate
-    end_date : str
+    date : str
         Date string in 'YYYY-MM-DD'
     
     Returns
@@ -81,7 +81,7 @@ def generate_signals(strategy_func: Callable, tickers: list, end_date: str) -> p
         DataFrame with columns: ticker, signal
     """
     conn = get_db_connection()
-    df_hist = fetch_universe_data(conn, tickers, end_date)
+    df_hist = fetch_universe_data(conn, tickers, date)
     conn.close()
 
     signals_list = []

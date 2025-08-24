@@ -187,6 +187,102 @@ tail -f ~/money/logs/update_db.log
 
 ---
 
-**Fine documento**
+## 10. Strategia di trading e generazione segnali
+
+### 10.1 Modulo `strategies.py`
+- Contiene tutte le strategie implementate.
+- Ogni strategia è una funzione che riceve in input un DataFrame con dati storici:
+  ```text
+  Columns: date, ticker, open, high, low, close, volume
+````
+
+* Restituisce un **segnale** (`BUY`, `SELL`, `HOLD`) o un codice numerico.
+* Documentazione interna:
+
+  * Docstring in Google-style con parametri e output.
+  * Spiegazione tecnica e logica della strategia:
+
+    * Perché funziona.
+    * Quando è più efficace.
+* Strategie attualmente implementate:
+
+  * `moving_average_crossover`
+  * `rsi_strategy`
+  * `momentum_breakout`
+  * Altre possono essere aggiunte seguendo lo stesso schema.
+
+### 10.2 Funzione `generate_signals`
+
+* Input:
+
+  1. `strategy_func` → funzione strategia dal modulo `strategies.py`.
+  2. `tickers` → lista di ticker da analizzare.
+  3. `date` → data di riferimento.
+* Output:
+
+  * DataFrame con colonne: `ticker`, `signal`.
+* Funzionamento:
+
+  1. Recupera i dati storici dal DB `universe`.
+  2. Applica la strategia a ciascun ticker.
+  3. Costruisce un DataFrame dei segnali generati.
+* Uso tipico:
+
+  ```python
+  df_signals = generate_signals(strategy_func=strategies.moving_average_crossover, tickers=['SPY','AAPL'], date='2025-08-23')
+  ```
+
+### 10.3 Generazione report settimanale
+
+* Script: `create_weekly_signals_report.py`
+* Funzioni principali:
+
+  1. Recupera la lista dei ticker dal DB.
+  2. Cicla su tutte le strategie definite in `strategies.py`.
+  3. Genera segnali per ciascuna strategia.
+  4. Crea un Google Sheet nella cartella Drive:
+
+     ```
+     Reports/Weekly
+     ```
+
+     con nome:
+
+     ```
+     <strategy_name>_<data>
+     ```
+* Questo report permette di consultare i segnali il weekend e programmare i trigger nel broker.
+
+### 10.4 Test dei segnali
+
+* Script: `test.py`
+* Permette di:
+
+  * Generare segnali per una singola strategia.
+  * Generare segnali per tutte le strategie.
+  * Testare la creazione del report settimanale.
+* Serve per debug e sviluppo senza eseguire cron/systemd.
+
+### 10.5 Pipeline completa strategie → report
+
+1. Scrivere/aggiornare strategie in `strategies.py`.
+2. Recuperare dati storici dal DB `universe`.
+3. Chiamare `generate_signals` con ticker e data.
+4. Salvare i segnali in un DataFrame.
+5. Generare report settimanale con `create_weekly_signals_report.py` (Drive `Reports/Weekly`).
+
+---
+
+## 11. Note operative
+
+* Tutti gli script devono essere eseguiti nell’ambiente virtuale `env`.
+* Gli import devono essere coerenti:
+
+  ```python
+  from scripts.trading import strategies
+  from scripts.trading.generate_signals import generate_signals
+  ```
+* I report settimanali vengono generati automaticamente tramite systemd / timer (opzionale per test manuali).
 
 ```
+

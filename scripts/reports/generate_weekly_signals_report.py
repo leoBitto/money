@@ -47,4 +47,12 @@ def generate_weekly_report():
     functions = get_strategy_functions()
     for f in functions:
         signals = generate_signals(f[1], '2025-08-24')
+        
+        # mappatura numeri → stringhe
+        signals["signal"] = signals["signal"].map({
+            -1: "SELL",
+             0: "HOLD",
+             1: "BUY"
+        })
+
         print(signals.head())

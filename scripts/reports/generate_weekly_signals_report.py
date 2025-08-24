@@ -6,9 +6,9 @@ from datetime import datetime
 from typing import Optional, Dict, List
 import pandas as pd
 import gspread
+from gspread_dataframe import set_with_dataframe
 from google.oauth2.service_account import Credentials
 from google.cloud import secretmanager
-import io
 
 from scripts.trading.generate_signals import generate_signals
 from scripts.trading import strategies
@@ -43,16 +43,50 @@ def get_strategy_functions() -> List[tuple]:
             strategy_functions.append((name, func))
     return strategy_functions
 
+def save_df_to_google_sheet(df, sheet_name):
+    client = setup_google_client()  # ottieni il client
+    # crea un nuovo foglio
+    spreadsheet = client.create(sheet_name, folder=WEEKLY_FOLDER_ID)
+    worksheet = spreadsheet.get_worksheet(0)  # prende il primo foglio
+    # scrive il DataFrame
+    set_with_dataframe(worksheet, df)
+    print(f"✅ Foglio '{sheet_name}' creato in Google Drive")
+
 def generate_weekly_report():
+    client = setup_google_client()  # ottieni il client Google
+    today = datetime.today().strftime('%Y-%m-%d')
     functions = get_strategy_functions()
+
+    # crea un unico Google Sheet per tutte le strategie
+    spreadsheet_name = f"Weekly_Signals_{today}"
+    spreadsheet = client.create(title=spreadsheet_name, folder=WEEKLY_FOLDER_ID)
+    
+    print(f"📂 Creata cartella principale: {spreadsheet_name}")
+    
+    first_sheet = True  # serve perché il file di default ha già un foglio
+
     for f in functions:
-        signals = generate_signals(f[1], '2025-08-24')
-        
-        # mappatura numeri → stringhe
-        signals["signal"] = signals["signal"].map({
+        strategy_name = f[0]
+        df_signals = generate_signals(f[1], today)
+
+        # converti i segnali numerici in testo
+        df_signals["signal"] = df_signals["signal"].map({
             -1: "SELL",
              0: "HOLD",
              1: "BUY"
         })
 
-        print(signals.head())
+        # se è il primo foglio, usa quello di default, altrimenti aggiungi un nuovo foglio
+        if first_sheet:
+            worksheet = spreadsheet.get_worksheet(0)
+            worksheet.update(title=strategy_name)
+            first_sheet = False
+        else:
+            worksheet = spreadsheet.add_worksheet(title=strategy_name, rows=str(len(df_signals)+1), cols=str(len(df_signals.columns)))
+        
+        # scrivi il DataFrame
+        set_with_dataframe(worksheet, df_signals)
+        print(f"✅ Foglio '{strategy_name}' aggiornato con {len(df_signals)} segnali")
+
+    print(f"🔗 Link al file completo: https://docs.google.com/spreadsheets/d/{spreadsheet.id}/edit")
+

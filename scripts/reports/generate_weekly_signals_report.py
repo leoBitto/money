@@ -52,18 +52,15 @@ def save_df_to_google_sheet(df, sheet_name):
     set_with_dataframe(worksheet, df)
     print(f"✅ Foglio '{sheet_name}' creato in Google Drive")
 
+TEST_SHEET_ID = "1fGTT6O197auwyHGnEBKwvHm3oZwwWz9r8Nm4hz76jKM"  # file già esistente
+
 def generate_weekly_report():
-    client = setup_google_client()  # ottieni il client Google
+    client = setup_google_client()  # client Google
     today = datetime.today().strftime('%Y-%m-%d')
     functions = get_strategy_functions()
-    print(client)
-    # crea un unico Google Sheet per tutte le strategie
-    spreadsheet_name = f"Weekly_Signals_{today}"
-    spreadsheet = client.create(title=spreadsheet_name, folder_id=WEEKLY_FOLDER_ID)
-    spreadsheet.share('leonardo_bitto1@gmail.com', perm_type='user', role='editor')
-    print(f"📂 Creata cartella principale: {spreadsheet_name}")
-    
-    first_sheet = True  # serve perché il file di default ha già un foglio
+
+    # apri il file esistente
+    spreadsheet = client.open_by_key(TEST_SHEET_ID)
 
     for f in functions:
         strategy_name = f[0]
@@ -76,17 +73,58 @@ def generate_weekly_report():
              1: "BUY"
         })
 
-        # se è il primo foglio, usa quello di default, altrimenti aggiungi un nuovo foglio
-        if first_sheet:
-            worksheet = spreadsheet.get_worksheet(0)
-            worksheet.update(title=strategy_name)
-            first_sheet = False
-        else:
-            worksheet = spreadsheet.add_worksheet(title=strategy_name, rows=str(len(df_signals)+1), cols=str(len(df_signals.columns)))
-        
+        # controlla se esiste già un worksheet con quel nome
+        try:
+            worksheet = spreadsheet.worksheet(strategy_name)
+            worksheet.clear()  # pulisci prima di scrivere
+        except Exception:
+            worksheet = spreadsheet.add_worksheet(
+                title=strategy_name,
+                rows=str(len(df_signals)+1),
+                cols=str(len(df_signals.columns))
+            )
+
         # scrivi il DataFrame
         set_with_dataframe(worksheet, df_signals)
         print(f"✅ Foglio '{strategy_name}' aggiornato con {len(df_signals)} segnali")
 
-    print(f"🔗 Link al file completo: https://docs.google.com/spreadsheets/d/{spreadsheet.id}/edit")
+    print(f"🔗 File aggiornato: https://docs.google.com/spreadsheets/d/{TEST_SHEET_ID}/edit")
+
+#def generate_weekly_report():
+#    client = setup_google_client()  # ottieni il client Google
+#    today = datetime.today().strftime('%Y-%m-%d')
+#    functions = get_strategy_functions()
+#
+#    # crea un unico Google Sheet per tutte le strategie
+#    spreadsheet_name = f"Weekly_Signals_{today}"
+#    spreadsheet = client.create(title=spreadsheet_name, folder_id=WEEKLY_FOLDER_ID)
+#    spreadsheet.share('leonardo_bitto1@gmail.com', perm_type='user', role='editor')
+#    print(f"📂 Creata cartella principale: {spreadsheet_name}")
+#    
+#    first_sheet = True  # serve perché il file di default ha già un foglio
+#
+#    for f in functions:
+#        strategy_name = f[0]
+#        df_signals = generate_signals(f[1], today)
+#
+#        # converti i segnali numerici in testo
+#        df_signals["signal"] = df_signals["signal"].map({
+#            -1: "SELL",
+#             0: "HOLD",
+#             1: "BUY"
+#        })
+#
+#        # se è il primo foglio, usa quello di default, altrimenti aggiungi un nuovo foglio
+#        if first_sheet:
+#            worksheet = spreadsheet.get_worksheet(0)
+#            worksheet.update(title=strategy_name)
+#            first_sheet = False
+#        else:
+#            worksheet = spreadsheet.add_worksheet(title=strategy_name, rows=str(len(df_signals)+1), cols=str(len(df_signals.columns)))
+#        
+#        # scrivi il DataFrame
+#        set_with_dataframe(worksheet, df_signals)
+#        print(f"✅ Foglio '{strategy_name}' aggiornato con {len(df_signals)} segnali")
+#
+#    print(f"🔗 Link al file completo: https://docs.google.com/spreadsheets/d/{spreadsheet.id}/edit")
 

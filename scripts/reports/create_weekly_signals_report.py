@@ -1,5 +1,5 @@
 import inspect
-from scripts.trading import strategies
+from scripts.trading import generate_signals, strategies
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials

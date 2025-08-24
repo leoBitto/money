@@ -257,17 +257,17 @@ if __name__ == "__main__":
     # 2. Test strategia singola (crea UN solo Google Sheet per test)
     print("\n🎯 FASE 2: TEST SINGOLA STRATEGIA")
     # Decommentare per testare creazione di UN singolo Google Sheet
-    # test_simplified_report_single_strategy()
+    test_simplified_report_single_strategy()
     
     # 3. Test report completo per una data (crea Google Sheets reali!)
     print("\n📊 FASE 3: TEST REPORT COMPLETO")
     # Decommentare per creare tutti i Google Sheets
-    # test_simplified_weekly_report()
+    test_simplified_weekly_report()
     
     # 4. Test con date multiple (crea MOLTI Google Sheets!)
     print("\n📅 FASE 4: TEST DATE MULTIPLE")
     # Decommentare per test con date diverse (ATTENZIONE: crea molti files!)
-    # test_simplified_report_with_custom_dates()
+    test_simplified_report_with_custom_dates()
     
     print(f"\n🎉 TESTS COMPLETED!")
     print(f"\n💡 SUGGERIMENTI:")

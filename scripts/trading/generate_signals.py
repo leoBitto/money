@@ -5,7 +5,7 @@ import json
 from google.cloud import secretmanager
 from datetime import datetime
 from typing import Callable
-from strategies import *
+from scripts.trading.strategies import *
 
 def get_db_connection(secret_name: str = "projects/trading-469418/secrets/db_info/versions/latest"):
     """

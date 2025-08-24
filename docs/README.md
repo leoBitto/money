@@ -110,7 +110,7 @@ After=network.target
 Type=oneshot
 User=leonardo_bitto1
 WorkingDirectory=/home/leonardo_bitto1/money
-ExecStart=/home/leonardo_bitto1/money/env/bin/python /home/leonardo_bitto1/money/scripts/update_db.py
+ExecStart=/home/leonardo_bitto1/money/env/bin/python /home/leonardo_bitto1/money/scripts/pipeline/update_db.py
 StandardOutput=append:/home/leonardo_bitto1/money/logs/update_db.log
 StandardError=append:/home/leonardo_bitto1/money/logs/update_db.log
 ```

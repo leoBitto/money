@@ -8,11 +8,12 @@ import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
 from google.cloud import secretmanager
+import io
 
 from scripts.trading.generate_signals import generate_signals
 from scripts.trading import strategies
 
-# --- Configurazione Google Sheets ---
+# --- Configurazione Google Sheets/Drive ---
 SECRET_NAME = "projects/trading-469418/secrets/service_account/versions/latest"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -21,7 +22,7 @@ SCOPES = [
 WEEKLY_FOLDER_ID = "1pGSxyPjc8rotTFZp-HA-Xrl7yZHjDWDh"
 
 def setup_google_client():
-    """Configura e ritorna il client Google Sheets"""
+    """Configura e ritorna il client Google Drive/Sheets"""
     try:
         client_sm = secretmanager.SecretManagerServiceClient()
         response = client_sm.access_secret_version(name=SECRET_NAME)
@@ -29,7 +30,7 @@ def setup_google_client():
         creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
         return gspread.authorize(creds)
     except Exception as e:
-        print(f"❌ Errore configurazione Google Sheets: {e}")
+        print(f"❌ Errore configurazione Google client: {e}")
         raise
 
 def get_strategy_functions() -> List[tuple]:
@@ -42,95 +43,65 @@ def get_strategy_functions() -> List[tuple]:
             strategy_functions.append((name, func))
     return strategy_functions
 
-def create_enhanced_signals_dataframe(df_signals: pd.DataFrame, 
-                                     strategy_name: str, 
-                                     date: str) -> pd.DataFrame:
-    """Arricchisce il DataFrame con informazioni aggiuntive"""
-    df_enhanced = df_signals.copy()
-    
-    # Aggiungi colonne informative
-    df_enhanced['strategy'] = strategy_name
-    df_enhanced['date'] = date
-    df_enhanced['timestamp'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Converti segnali numerici in descrizioni
-    signal_map = {-1: 'SELL', 0: 'HOLD', 1: 'BUY'}
-    df_enhanced['signal_description'] = df_enhanced['signal'].map(signal_map)
-    
-    # Riordina colonne
-    cols = ['ticker', 'signal', 'signal_description', 'strategy', 'date', 'timestamp']
-    df_enhanced = df_enhanced[cols]
-    
-    return df_enhanced
-
-def create_statistics_data(df_signals: pd.DataFrame, strategy_name: str) -> List[List]:
-    """Crea i dati delle statistiche per il Google Sheet"""
-    total_tickers = len(df_signals)
-    signal_counts = df_signals['signal'].value_counts()
-    
-    buy_count = signal_counts.get(1, 0)
-    hold_count = signal_counts.get(0, 0)
-    sell_count = signal_counts.get(-1, 0)
-    
-    stats_data = [
-        ['Statistica', 'Valore', 'Percentuale'],
-        ['Ticker Totali', total_tickers, '100.0%'],
-        ['Segnali BUY', buy_count, f'{(buy_count/total_tickers*100):.1f}%' if total_tickers > 0 else '0%'],
-        ['Segnali HOLD', hold_count, f'{(hold_count/total_tickers*100):.1f}%' if total_tickers > 0 else '0%'],
-        ['Segnali SELL', sell_count, f'{(sell_count/total_tickers*100):.1f}%' if total_tickers > 0 else '0%'],
-        [],
-        ['Strategia', strategy_name, ''],
-        ['Generato il', datetime.now().strftime("%Y-%m-%d %H:%M:%S"), ''],
-    ]
-    
-    return stats_data
-
-def create_google_sheet(sheet_name: str, 
-                       df_signals: pd.DataFrame, 
-                       strategy_name: str, 
-                       gc) -> Optional[str]:
-    """Crea un Google Sheet con i dati dei segnali"""
+def create_simple_csv_file(df_signals: pd.DataFrame, 
+                          strategy_name: str, 
+                          date_str: str, 
+                          gc) -> Optional[str]:
+    """Crea un file CSV semplice nella cartella Google Drive"""
     try:
-        # Crea il sheet principale
-        sh = gc.create(sheet_name, folder_id=WEEKLY_FOLDER_ID)
-        worksheet = sh.sheet1
-        worksheet.update_title("Signals")
+        # Formatta la data per il nome file (dd_mm_yyyy)
+        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+        formatted_date = date_obj.strftime("%d_%m_%Y")
+        file_name = f"{strategy_name}_{formatted_date}.csv"
         
-        # Prepara e carica i dati principali
-        data_to_upload = [df_signals.columns.tolist()] + df_signals.values.tolist()
-        worksheet.update(data_to_upload)
+        # Aggiungi informazioni base al DataFrame
+        df_enhanced = df_signals.copy()
+        df_enhanced['strategy'] = strategy_name
+        df_enhanced['date'] = date_str
+        df_enhanced['generated_at'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Formatta header
-        worksheet.format('A1:Z1', {
-            'backgroundColor': {'red': 0.2, 'green': 0.6, 'blue': 0.9},
-            'textFormat': {'bold': True, 'foregroundColor': {'red': 1, 'green': 1, 'blue': 1}}
-        })
+        # Converti segnali in descrizioni leggibili
+        signal_map = {-1: 'SELL', 0: 'HOLD', 1: 'BUY'}
+        df_enhanced['signal_description'] = df_enhanced['signal'].map(signal_map)
         
-        # Aggiungi sheet con statistiche
-        stats_sheet = sh.add_worksheet(title="Statistics", rows="50", cols="5")
-        stats_data = create_statistics_data(df_signals, strategy_name)
-        stats_sheet.update(stats_data)
+        # Riordina colonne per chiarezza
+        cols = ['ticker', 'signal', 'signal_description', 'strategy', 'date', 'generated_at']
+        df_enhanced = df_enhanced[cols]
         
-        # Formatta header statistiche
-        stats_sheet.format('A1:C1', {
-            'backgroundColor': {'red': 0.9, 'green': 0.6, 'blue': 0.2},
-            'textFormat': {'bold': True}
-        })
+        # Converti DataFrame in CSV
+        csv_buffer = io.StringIO()
+        df_enhanced.to_csv(csv_buffer, index=False)
+        csv_content = csv_buffer.getvalue()
         
-        return sh.url
+        # Carica il file su Google Drive
+        drive_service = gc.auth.service
+        file_metadata = {
+            'name': file_name,
+            'parents': [WEEKLY_FOLDER_ID]
+        }
+        
+        media = drive_service.files().create(
+            body=file_metadata,
+            media_body=csv_content,
+            fields='id,webViewLink'
+        ).execute()
+        
+        file_url = media.get('webViewLink')
+        print(f"✅ File creato: {file_name}")
+        return file_url
         
     except Exception as e:
-        print(f"❌ Errore creazione Google Sheet {sheet_name}: {e}")
+        print(f"❌ Errore creazione file per {strategy_name}: {e}")
         return None
 
-def generate_single_strategy_report(strategy_name: str, 
-                                  strategy_func, 
-                                  date: str, 
-                                  gc, 
-                                  strategy_params: Optional[Dict] = None) -> Optional[str]:
-    """Genera un report per una singola strategia"""
+def generate_strategy_file(strategy_name: str, 
+                          strategy_func, 
+                          date: str, 
+                          gc, 
+                          strategy_params: Optional[Dict] = None) -> Optional[str]:
+    """Genera un file per una singola strategia"""
     try:
-        print(f"📊 Generando report per {strategy_name}...")
+        print(f"📊 Processando {strategy_name}...")
         
         # Genera i segnali
         if strategy_params:
@@ -142,20 +113,19 @@ def generate_single_strategy_report(strategy_name: str,
             print(f"⚠️  Nessun segnale per {strategy_name}")
             return None
         
-        # Arricchisci il DataFrame
-        df_enhanced = create_enhanced_signals_dataframe(df_signals, strategy_name, date)
+        # Crea il file CSV
+        file_url = create_simple_csv_file(df_signals, strategy_name, date, gc)
         
-        # Crea il Google Sheet
-        sheet_name = f"{strategy_name}_{date}"
-        url = create_google_sheet(sheet_name, df_enhanced, strategy_name, gc)
-        
-        if url:
+        if file_url:
+            # Statistiche semplici
             signal_counts = df_signals['signal'].value_counts()
-            print(f"✅ {strategy_name}: {len(df_signals)} ticker, "
-                  f"Buy: {signal_counts.get(1, 0)}, "
-                  f"Hold: {signal_counts.get(0, 0)}, "
-                  f"Sell: {signal_counts.get(-1, 0)}")
-            return url
+            total = len(df_signals)
+            buy_count = signal_counts.get(1, 0)
+            hold_count = signal_counts.get(0, 0) 
+            sell_count = signal_counts.get(-1, 0)
+            
+            print(f"   📈 Totale: {total} ticker | Buy: {buy_count} | Hold: {hold_count} | Sell: {sell_count}")
+            return file_url
         else:
             return None
             
@@ -165,7 +135,7 @@ def generate_single_strategy_report(strategy_name: str,
 
 def generate_weekly_signals_report(date: Optional[str] = None) -> Dict[str, Optional[str]]:
     """
-    Funzione principale per generare i report settimanali.
+    Funzione principale semplificata per generare i file settimanali.
     
     Parameters:
     -----------
@@ -176,26 +146,26 @@ def generate_weekly_signals_report(date: Optional[str] = None) -> Dict[str, Opti
     Returns:
     --------
     Dict[str, Optional[str]]
-        Dizionario con nome_strategia -> URL del Google Sheet (None se errore)
+        Dizionario con nome_strategia -> URL del file (None se errore)
     """
     if date is None:
         date = datetime.today().strftime("%Y-%m-%d")
     
-    print("🚀 GENERAZIONE REPORT SETTIMANALI")
-    print("=" * 50)
+    print("🚀 GENERAZIONE FILE SEGNALI SETTIMANALI")
+    print("=" * 45)
     print(f"📅 Data: {date}")
     
-    # Setup Google Sheets client
+    # Setup Google client
     try:
         gc = setup_google_client()
-        print("✅ Google Sheets client configurato")
+        print("✅ Google Drive client configurato")
     except Exception as e:
-        print(f"❌ Impossibile configurare Google Sheets: {e}")
+        print(f"❌ Impossibile configurare Google Drive: {e}")
         return {}
     
     # Recupera le strategie disponibili
     strategy_functions = get_strategy_functions()
-    print(f"📈 Trovate {len(strategy_functions)} strategie: {[name for name, _ in strategy_functions]}")
+    print(f"📈 Trovate {len(strategy_functions)} strategie")
     
     # Parametri di default per le strategie
     default_params = {
@@ -204,29 +174,46 @@ def generate_weekly_signals_report(date: Optional[str] = None) -> Dict[str, Opti
         'breakout_strategy': {'lookback': 20}
     }
     
-    # Genera report per ogni strategia
-    report_urls = {}
-    successful_reports = 0
+    # Genera file per ogni strategia
+    file_urls = {}
+    successful_files = 0
     
-    print(f"\n📊 Generando report...")
+    print(f"\n📁 Generando file...")
     for strategy_name, strategy_func in strategy_functions:
         params = default_params.get(strategy_name, {})
-        url = generate_single_strategy_report(strategy_name, strategy_func, date, gc, params)
-        report_urls[strategy_name] = url
+        url = generate_strategy_file(strategy_name, strategy_func, date, gc, params)
+        file_urls[strategy_name] = url
         
         if url:
-            successful_reports += 1
+            successful_files += 1
     
     # Riepilogo finale
     print(f"\n🎉 COMPLETATO!")
-    print(f"📊 Report generati: {successful_reports}/{len(strategy_functions)}")
-    print(f"\n📋 RIEPILOGO:")
+    print(f"📁 File generati: {successful_files}/{len(strategy_functions)}")
     
-    for strategy_name, url in report_urls.items():
-        if url:
-            print(f"✅ {strategy_name}: {url}")
-        else:
-            print(f"❌ {strategy_name}: Errore o nessun dato")
+    if successful_files > 0:
+        print(f"\n📋 FILE CREATI:")
+        for strategy_name, url in file_urls.items():
+            if url:
+                date_obj = datetime.strptime(date, "%Y-%m-%d")
+                formatted_date = date_obj.strftime("%d_%m_%Y")
+                print(f"✅ {strategy_name}_{formatted_date}.csv")
+            else:
+                print(f"❌ {strategy_name}: Errore o nessun dato")
     
-    return report_urls
+    return file_urls
 
+# Funzione di utilità per eseguire lo script
+def main():
+    """Funzione main per eseguire lo script da riga di comando"""
+    import sys
+    
+    date = None
+    if len(sys.argv) > 1:
+        date = sys.argv[1]
+    
+    result = generate_weekly_signals_report(date)
+    return result
+
+if __name__ == "__main__":
+    main()

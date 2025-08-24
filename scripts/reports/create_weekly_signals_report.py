@@ -4,7 +4,6 @@ from scripts.trading import strategies
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from generate_signals import generate_signals
 from google.cloud import secretmanager
 import json
 from datetime import datetime

@@ -59,7 +59,7 @@ def generate_weekly_report():
 
     # crea un unico Google Sheet per tutte le strategie
     spreadsheet_name = f"Weekly_Signals_{today}"
-    spreadsheet = client.create(title=spreadsheet_name, parent_id=WEEKLY_FOLDER_ID)
+    spreadsheet = client.create(title=spreadsheet_name, folder_id=WEEKLY_FOLDER_ID)
     
     print(f"📂 Creata cartella principale: {spreadsheet_name}")
     

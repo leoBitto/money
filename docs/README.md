@@ -1,4 +1,3 @@
-```markdown
 # Progetto Money – Documentazione Operativa
 
 ## 1. Scopo del progetto
@@ -14,7 +13,7 @@ Questa documentazione serve come guida operativa per comprendere, deployare e ma
 
 ## 2. Struttura del repository
 
-```
+````
 
 money/
 ├── check\_db.py            # Script per verificare lo stato del DB
@@ -194,7 +193,7 @@ tail -f ~/money/logs/update_db.log
 - Ogni strategia è una funzione che riceve in input un DataFrame con dati storici:
   ```text
   Columns: date, ticker, open, high, low, close, volume
-````
+  ```
 
 * Restituisce un **segnale** (`BUY`, `SELL`, `HOLD`) o un codice numerico.
 * Documentazione interna:

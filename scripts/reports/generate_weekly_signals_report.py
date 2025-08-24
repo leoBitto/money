@@ -56,11 +56,11 @@ def generate_weekly_report():
     client = setup_google_client()  # ottieni il client Google
     today = datetime.today().strftime('%Y-%m-%d')
     functions = get_strategy_functions()
-
+    print(client)
     # crea un unico Google Sheet per tutte le strategie
     spreadsheet_name = f"Weekly_Signals_{today}"
     spreadsheet = client.create(title=spreadsheet_name, folder_id=WEEKLY_FOLDER_ID)
-    
+    spreadsheet.share('leonardo_bitto1@gmail.com', perm_type='user', role='editor')
     print(f"📂 Creata cartella principale: {spreadsheet_name}")
     
     first_sheet = True  # serve perché il file di default ha già un foglio

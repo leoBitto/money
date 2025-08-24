@@ -19,13 +19,20 @@ conn = psycopg2.connect(
 )
 cursor = conn.cursor()
 
-# --- 3. Creazione tabella universe ---
+# --- 3. Droppa tabella se esiste ---
+cursor.execute("DROP TABLE IF EXISTS universe;")
+
+# --- 4. Creazione tabella universe con OHLCV ---
 cursor.execute("""
-CREATE TABLE IF NOT EXISTS universe (
+CREATE TABLE universe (
+    date DATE NOT NULL,
     ticker VARCHAR(50) NOT NULL,
-    data DATE NOT NULL,
-    prezzo NUMERIC(18,6) NOT NULL,
-    PRIMARY KEY (ticker, data)
+    open NUMERIC(18,6),
+    high NUMERIC(18,6),
+    low NUMERIC(18,6),
+    close NUMERIC(18,6),
+    volume NUMERIC(20,2),
+    PRIMARY KEY (date, ticker)
 );
 """)
 
@@ -33,4 +40,4 @@ conn.commit()
 cursor.close()
 conn.close()
 
-print("Tabella 'universe' pronta!")
+print("Tabella 'universe' pronta con schema OHLCV!")

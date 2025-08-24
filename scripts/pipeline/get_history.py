@@ -42,10 +42,18 @@ records = []
 for ticker in tickers:
     try:
         df_t = prices[ticker] if len(tickers) > 1 else prices  # se uno solo cambia formato
-        df_t = df_t[['Close']].reset_index()
+        df_t = df_t[['Open', 'High', 'Low', 'Close', 'Volume']].reset_index()
         df_t['Ticker'] = ticker
-        df_t.rename(columns={'Date': 'Data', 'Close': 'Prezzo'}, inplace=True)
-        records.extend(df_t.to_dict(orient="records"))
+        df_t.rename(columns={
+            'Date': 'date',
+            'Open': 'open',
+            'High': 'high',
+            'Low': 'low',
+            'Close': 'close',
+            'Volume': 'volume',
+            'Ticker': 'ticker'
+        }, inplace=True)
+        records.extend(df_t.to_dict(orient='records'))
     except Exception as e:
         print(f"Errore con {ticker}: {e}")
 
@@ -68,13 +76,13 @@ cursor = conn.cursor()
 
 # --- 6. Inserisci in DB evitando duplicati ---
 insert_query = """
-    INSERT INTO universe (ticker, data, prezzo)
-    VALUES (%s, %s, %s)
-    ON CONFLICT (ticker, data) DO NOTHING;
+INSERT INTO universe (date, ticker, open, high, low, close, volume)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
+ON CONFLICT (date, ticker) DO NOTHING;
 """
 
 batch = [
-    (row['Ticker'], row['Data'].date(), float(row['Prezzo']))
+    (row['date'].date(), row['ticker'], row['open'], row['high'], row['low'], row['close'], row['volume'])
     for _, row in df_prices.iterrows()
 ]
 

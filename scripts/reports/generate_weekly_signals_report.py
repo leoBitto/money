@@ -203,17 +203,3 @@ def generate_weekly_signals_report(date: Optional[str] = None) -> Dict[str, Opti
     
     return file_urls
 
-# Funzione di utilità per eseguire lo script
-def main():
-    """Funzione main per eseguire lo script da riga di comando"""
-    import sys
-    
-    date = None
-    if len(sys.argv) > 1:
-        date = sys.argv[1]
-    
-    result = generate_weekly_signals_report(date)
-    return result
-
-if __name__ == "__main__":
-    main()

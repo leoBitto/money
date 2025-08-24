@@ -46,4 +46,5 @@ def get_strategy_functions() -> List[tuple]:
 def generate_weekly_report():
     functions = get_strategy_functions()
     for f in functions:
-        generate_signals(f[1], '2025-08-24')
+        signals = generate_signals(f[1], '2025-08-24')
+        print(signals.head())

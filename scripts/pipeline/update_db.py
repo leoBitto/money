@@ -1,99 +1,73 @@
-import gspread
-from google.oauth2.service_account import Credentials
-from google.cloud import secretmanager
-import pandas as pd
+# scripts/pipeline/update_db.py (REFACTORED)
 from datetime import datetime
-import json
-import psycopg2
-import yfinance as yf
 
-# --- 1. Leggi il JSON della SA dal Secret Manager ---
-SECRET_NAME = "projects/trading-469418/secrets/service_account/versions/latest"
-client_sm = secretmanager.SecretManagerServiceClient()
-response = client_sm.access_secret_version(name=SECRET_NAME)
-service_account_info = json.loads(response.payload.data.decode("UTF-8"))
+# Import delle utilities
+from ..utils.gcp_utils import GoogleSheetsManager
+from ..utils.data_utils import download_yfinance_data, prepare_db_batch
+from ..utils.db_utils import DatabaseManager
 
-SCOPES = [
-    "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
-]
-
-creds = Credentials.from_service_account_info(service_account_info, scopes=SCOPES)
-client = gspread.authorize(creds)
-
-# --- 2. Apri lo Sheet ---
+# Configurazioni
 SPREADSHEET_ID = '1Uh3S3YCyvupZ5yZh2uDi0XYGaZIkEkupxsYed6xRxgA'
-sheet = client.open_by_key(SPREADSHEET_ID)
-worksheet = sheet.sheet1
 
-# --- 3. Leggi i ticker dallo Sheet ---
-data = worksheet.get_all_records()
-df_sheet = pd.DataFrame(data)
-tickers = df_sheet['Ticker'].dropna().unique().tolist()
-
-print(f"Trovati {len(tickers)} ticker nello Sheet.")
-
-# --- 4. Scarica i prezzi odierni con yfinance ---
-today = datetime.today().strftime('%Y-%m-%d')
-prices = yf.download(tickers, period="1d", interval="1d", group_by="ticker", auto_adjust=True, progress=False)
-
-# Normalizza i dati in lista di dizionari per l'inserimento
-records = []
-for ticker in tickers:
+def update_daily_prices():
+    """
+    Aggiorna i prezzi giornalieri nel database con i dati più recenti
+    """
+    print("🔄 Inizio aggiornamento prezzi giornalieri...")
+    
+    # --- 1. Setup Google Sheets e recupero ticker ---
+    print("📊 Recupero ticker da Google Sheets...")
+    sheets_manager = GoogleSheetsManager()
+    tickers = sheets_manager.get_tickers_from_sheet(SPREADSHEET_ID)
+    print(f"✅ Trovati {len(tickers)} ticker nello Sheet.")
+    
+    if not tickers:
+        print("❌ Nessun ticker trovato. Operazione interrotta.")
+        return
+    
+    # --- 2. Download dati da yfinance ---
+    print("📈 Download dati odierni da yfinance...")
     try:
-        df_t = prices[ticker] if len(tickers) > 1 else prices
-        df_t = df_t[['Open', 'High', 'Low', 'Close', 'Volume']].reset_index()
-        df_t['Ticker'] = ticker
-        df_t.rename(columns={
-            'Date': 'date',
-            'Open': 'open',
-            'High': 'high',
-            'Low': 'low',
-            'Close': 'close',
-            'Volume': 'volume',
-            'Ticker': 'ticker'
-        }, inplace=True)
-        records.extend(df_t.to_dict(orient='records'))
+        df_prices = download_yfinance_data(tickers, period="1d", interval="1d")
+        print(f"✅ Righe pronte da inserire: {len(df_prices)}")
+        
+        if df_prices.empty:
+            print("❌ Nessun dato scaricato. Operazione interrotta.")
+            return
+            
     except Exception as e:
-        print(f"Errore con {ticker}: {e}")
+        print(f"❌ Errore nel download dati: {e}")
+        return
+    
+    # --- 3. Preparazione dati per DB ---
+    print("🔧 Preparazione dati per inserimento...")
+    batch_data = prepare_db_batch(df_prices)
+    
+    if not batch_data:
+        print("❌ Nessun dato valido da inserire.")
+        return
+    
+    # --- 4. Inserimento in database ---
+    print("💾 Inserimento dati nel database...")
+    try:
+        db_manager = DatabaseManager()
+        
+        # Usa DO UPDATE per aggiornare dati esistenti (prezzi possono cambiare durante il giorno)
+        conflict_resolution = """DO UPDATE 
+        SET open = EXCLUDED.open,
+            high = EXCLUDED.high,
+            low = EXCLUDED.low,
+            close = EXCLUDED.close,
+            volume = EXCLUDED.volume"""
+        
+        rows_processed = db_manager.insert_batch_universe(batch_data, conflict_resolution)
+        print(f"✅ {rows_processed} righe inserite/aggiornate su PostgreSQL")
+        
+    except Exception as e:
+        print(f"❌ Errore nell'inserimento database: {e}")
+        return
+    
+    print("🎉 Aggiornamento completato con successo!")
 
-df_prices = pd.DataFrame(records)
-print(f"Righe pronte da inserire: {len(df_prices)}")
-
-# --- 5. Leggi i secret del DB ---
-SECRET_DB_NAME = "projects/trading-469418/secrets/db_info/versions/latest"
-response_db = client_sm.access_secret_version(name=SECRET_DB_NAME)
-db_info = json.loads(response_db.payload.data.decode("UTF-8"))
-
-conn = psycopg2.connect(
-    host=db_info["DB_HOST"],
-    port=db_info["DB_PORT"],
-    database=db_info["DB_NAME"],
-    user=db_info["DB_USER"],
-    password=db_info["DB_PASSWORD"]
-)
-cursor = conn.cursor()
-
-# --- 6. Inserisci/aggiorna dati nella tabella universe ---
-insert_query = """
-INSERT INTO universe (date, ticker, open, high, low, close, volume)
-VALUES (%s, %s, %s, %s, %s, %s, %s)
-ON CONFLICT (date, ticker) DO UPDATE 
-SET open = EXCLUDED.open,
-    high = EXCLUDED.high,
-    low = EXCLUDED.low,
-    close = EXCLUDED.close,
-    volume = EXCLUDED.volume;
-"""
-
-batch = [
-    (row['date'].date(), row['ticker'], row['open'], row['high'], row['low'], row['close'], row['volume'])
-    for _, row in df_prices.iterrows()
-]
-
-cursor.executemany(insert_query, batch)
-conn.commit()
-cursor.close()
-conn.close()
-
-print(f"{len(batch)} righe inserite/aggiornate su PostgreSQL")
+if __name__ == "__main__":
+    update_daily_prices()

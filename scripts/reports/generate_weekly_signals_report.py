@@ -62,6 +62,9 @@ def generate_weekly_report():
     # apri il file esistente
     spreadsheet = client.open_by_key(TEST_SHEET_ID)
 
+    # === 1. Aggiorna worksheet strategie ===
+    metadata_row = {"Date": today}
+
     for f in functions:
         strategy_name = f[0]
         df_signals = generate_signals(f[1], today)
@@ -72,6 +75,12 @@ def generate_weekly_report():
              0: "HOLD",
              1: "BUY"
         })
+
+        # calcola conteggi
+        counts = df_signals["signal"].value_counts().to_dict()
+        metadata_row[f"{strategy_name}_BUY"] = counts.get("BUY", 0)
+        metadata_row[f"{strategy_name}_HOLD"] = counts.get("HOLD", 0)
+        metadata_row[f"{strategy_name}_SELL"] = counts.get("SELL", 0)
 
         # controlla se esiste già un worksheet con quel nome
         try:
@@ -88,43 +97,31 @@ def generate_weekly_report():
         set_with_dataframe(worksheet, df_signals)
         print(f"✅ Foglio '{strategy_name}' aggiornato con {len(df_signals)} segnali")
 
-    print(f"🔗 File aggiornato: https://docs.google.com/spreadsheets/d/{TEST_SHEET_ID}/edit")
+    # === 2. Aggiorna foglio Metadata ===
+    try:
+        meta_ws = spreadsheet.worksheet("Metadata")
+    except Exception:
+        # crea il foglio se non esiste
+        meta_ws = spreadsheet.add_worksheet(
+            title="Metadata",
+            rows="100",
+            cols="20"
+        )
+        # scrivi intestazioni
+        headers = list(metadata_row.keys())
+        meta_ws.append_row(headers)
 
-#def generate_weekly_report():
-#    client = setup_google_client()  # ottieni il client Google
-#    today = datetime.today().strftime('%Y-%m-%d')
-#    functions = get_strategy_functions()
-#
-#    # crea un unico Google Sheet per tutte le strategie
-#    spreadsheet_name = f"Weekly_Signals_{today}"
-#    spreadsheet = client.create(title=spreadsheet_name, folder_id=WEEKLY_FOLDER_ID)
-#    spreadsheet.share('leonardo_bitto1@gmail.com', perm_type='user', role='editor')
-#    print(f"📂 Creata cartella principale: {spreadsheet_name}")
-#    
-#    first_sheet = True  # serve perché il file di default ha già un foglio
-#
-#    for f in functions:
-#        strategy_name = f[0]
-#        df_signals = generate_signals(f[1], today)
-#
-#        # converti i segnali numerici in testo
-#        df_signals["signal"] = df_signals["signal"].map({
-#            -1: "SELL",
-#             0: "HOLD",
-#             1: "BUY"
-#        })
-#
-#        # se è il primo foglio, usa quello di default, altrimenti aggiungi un nuovo foglio
-#        if first_sheet:
-#            worksheet = spreadsheet.get_worksheet(0)
-#            worksheet.update(title=strategy_name)
-#            first_sheet = False
-#        else:
-#            worksheet = spreadsheet.add_worksheet(title=strategy_name, rows=str(len(df_signals)+1), cols=str(len(df_signals.columns)))
-#        
-#        # scrivi il DataFrame
-#        set_with_dataframe(worksheet, df_signals)
-#        print(f"✅ Foglio '{strategy_name}' aggiornato con {len(df_signals)} segnali")
-#
-#    print(f"🔗 Link al file completo: https://docs.google.com/spreadsheets/d/{spreadsheet.id}/edit")
+    # prendi intestazioni correnti
+    existing_headers = meta_ws.row_values(1)
 
+    # se ci sono nuove strategie, aggiorna intestazioni
+    new_headers = list(metadata_row.keys())
+    if existing_headers != new_headers:
+        meta_ws.clear()
+        meta_ws.append_row(new_headers)
+
+    # aggiungi nuova riga
+    row_values = [metadata_row[h] for h in new_headers]
+    meta_ws.append_row(row_values)
+
+    print(f"✅ Metadata_Log aggiornato con i dati del {today}")

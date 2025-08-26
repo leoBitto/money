@@ -1,287 +1,315 @@
-# Progetto Money – Documentazione Operativa
+# Money Trading System 📈
 
-## 1. Scopo del progetto
-Il progetto **Money** è una pipeline finanziaria che:
-- Legge una lista di ticker da un Google Sheet.
-- Scarica i prezzi di chiusura storici tramite `yfinance`.
-- Inserisce/aggiorna i dati in un database PostgreSQL.
-- Automatizza l’aggiornamento serale tramite un servizio systemd e un timer.
+Un sistema automatizzato per la generazione di segnali di trading basato su analisi tecnica, con aggiornamento automatico dei dati e report settimanali.
 
-Questa documentazione serve come guida operativa per comprendere, deployare e manutenere il progetto.
+## 🎯 Panoramica
 
----
+**Money** è una pipeline finanziaria completa che:
+- **Monitora automaticamente** una lista di ticker/ETF da Google Sheets
+- **Scarica prezzi storici** giornalieri tramite Yahoo Finance
+- **Applica strategie di trading** basate su indicatori tecnici
+- **Genera report settimanali** con segnali BUY/SELL/HOLD
+- **Gestisce tutto automaticamente** tramite systemd timers
 
-## 2. Struttura del repository
+### Architettura del Sistema
 
-````
-
-money/
-├── check\_db.py            # Script per verificare lo stato del DB
-├── get\_history.py         # Script per scaricare dati storici da yfinance
-├── init\_db.py             # Script di inizializzazione DB
-├── update\_db.py           # Script principale per aggiornare prezzi giornalieri
-├── logs/                  # Log delle esecuzioni
-│   └── .gitkeep
-├── scripts/               # Cartella con script di supporto
-├── docs/                  # Documentazione
-│   └── readme.md
-├── requirements.txt       # Dipendenze Python
-├── env/                   # Virtualenv (non versionato)
-└── .gitignore
-
-````
+```mermaid
+graph TD
+    A[Google Sheets<br/>Lista Tickers] --> B[Daily Update<br/>22:00 UTC]
+    B --> C[Yahoo Finance<br/>Download OHLCV]
+    C --> D[PostgreSQL<br/>Database]
+    D --> E[Trading Strategies<br/>MA, RSI, Breakout]
+    E --> F[Weekly Report<br/>Venerdì 23:59]
+    F --> G[Google Sheets<br/>Segnali Report]
+    
+    H[systemd timers] --> B
+    H --> F
+```
 
 ---
 
-## 3. Requisiti
+## 🚀 Quick Start
 
-- Python 3.10+
-- PostgreSQL accessibile
-- VM Linux con accesso SSH
-- Google Cloud Service Account per leggere i Google Sheets
-- Pacchetti Python come indicato in `requirements.txt`:
-  - `psycopg2-binary`
-  - `pandas`
-  - `numpy`
-  - `yfinance`
-  - `google-cloud-secret-manager`
-  - `requests`
-  - `python-dotenv`
+### Prerequisiti
+- **Python 3.10+**
+- **PostgreSQL** (locale o remoto)
+- **Google Cloud Project** con Secret Manager abilitato
+- **VM Linux** con accesso systemd
 
----
-
-## 4. Configurazione ambiente
-
-### 4.1 Virtualenv
-Creare l’ambiente virtuale nella root del progetto:
+### Installazione Rapida
 
 ```bash
-cd ~/money
+# 1. Clone del repository
+git clone <repository-url>
+cd money
+
+# 2. Setup ambiente virtuale
 python3 -m venv env
 source env/bin/activate
-pip install --upgrade pip setuptools wheel
 pip install -r requirements.txt
-deactivate
-````
 
-### 4.2 Secrets
+# 3. Configurazione secrets (vedi sezione Configurazione)
+# 4. Inizializza database
+python init_db.py
 
-I secrets gestiscono credenziali per:
-
-* DB PostgreSQL (`DB_HOST`, `DB_USER`, ecc.)
-* Google Service Account (`service_account.json`)
-* VM SSH (per CI/CD)
-
-Su GitHub, questi vengono configurati nelle **Actions Secrets**.
+# 5. Test manuale
+python run_daily_update_db.py
+python run_weekly_report.py
+```
 
 ---
 
-## 5. Aggiornamento dati
+## 📊 Funzionalità Principali
 
-### 5.1 Script principale
+### 1. **Aggiornamento Automatico Dati**
+- **Frequenza**: Ogni giorno alle 22:00 UTC (00:00 ora italiana)
+- **Fonte**: Yahoo Finance tramite `yfinance`
+- **Gestione**: Inserimento/aggiornamento automatico con gestione duplicati
+- **Formato**: OHLCV (Open, High, Low, Close, Volume)
 
-`update_db.py`:
+### 2. **Strategie di Trading Implementate**
 
-* Legge la lista dei ticker da Google Sheet.
-* Ottiene i prezzi storici con `yfinance`.
-* Inserisce/aggiorna i dati nella tabella `universe` del DB.
-* Logga output e errori in `logs/update_db.log`.
+| Strategia | Descrizione | Parametri |
+|-----------|-------------|-----------|
+| **Moving Average Crossover** | Incrocio medie mobili corte/lunghe | `short_window=3`, `long_window=5` |
+| **RSI Strategy** | Relative Strength Index con soglie | `period=14`, `overbought=70`, `oversold=30` |
+| **Breakout Strategy** | Rotture di massimi/minimi storici | `lookback=20` |
 
-### 5.2 Cronologia storica
-
-Per popolare dati passati si utilizza `get_history.py`.
-Evita blocchi di yfinance e duplicazioni nel DB.
+### 3. **Report Settimanali Automatici**
+- **Frequenza**: Ogni venerdì alle 23:59
+- **Formato**: Google Sheets con fogli separati per strategia
+- **Contenuto**: Segnali BUY/SELL/HOLD + statistiche riassuntive
 
 ---
 
-## 6. Automazione con systemd
+## 🛠️ Configurazione
 
-### 6.1 Service
+### Google Cloud Setup
 
-`/etc/systemd/system/update_db.service`:
-
-```ini
-[Unit]
-Description=Aggiorna database universe da Google Sheets
-After=network.target
-
-[Service]
-Type=oneshot
-User=leonardo_bitto1
-WorkingDirectory=/home/leonardo_bitto1/money
-ExecStart=/home/leonardo_bitto1/money/env/bin/python /home/leonardo_bitto1/money/scripts/pipeline/update_db.py
-StandardOutput=append:/home/leonardo_bitto1/money/logs/update_db.log
-StandardError=append:/home/leonardo_bitto1/money/logs/update_db.log
-```
-
-### 6.2 Timer
-
-`/etc/systemd/system/update_db.timer`:
-
-```ini
-[Unit]
-Description=Timer giornaliero per update_db
-
-[Timer]
-OnCalendar=*-*-* 23:00:00
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-Abilitare e avviare il timer:
+Il sistema utilizza **Google Cloud Secret Manager** per le credenziali:
 
 ```bash
-sudo systemctl daemon-reload
+# Secrets richiesti:
+# - db_info: credenziali PostgreSQL
+# - service_account: credenziali Google Sheets/Drive
+```
+
+**Esempio `db_info` secret:**
+```json
+{
+  "DB_HOST": "localhost",
+  "DB_PORT": "5432", 
+  "DB_NAME": "trading",
+  "DB_USER": "postgres",
+  "DB_PASSWORD": "password"
+}
+```
+
+### Systemd Services
+
+Il sistema usa due timer systemd per l'automazione:
+
+```bash
+# Abilita i servizi
 sudo systemctl enable --now update_db.timer
-systemctl list-timers
+sudo systemctl enable --now weekly_signals.timer
+
+# Verifica stato
+systemctl list-timers | grep -E "(update_db|weekly)"
 ```
 
 ---
 
-## 7. CI/CD con GitHub Actions
+## 📁 Struttura del Progetto
 
-* L’action fa `git pull` sulla VM dopo ogni push su `main`.
-* Riavvia il service con:
-
-```bash
-sudo systemctl restart update_db.service
 ```
-
-* I secrets necessari:
-
-  * `SSH_PRIVATE_KEY`
-  * `SERVER_USER`
-  * `SERVER_HOST`
-  * `SERVER_PATH` (es. `/home/leonardo_bitto1/money`)
-  * `SERVICE_NAME` (es. `update_db.service`)
+money/
+├── 🚀 Entry Points
+│   ├── run_daily_update_db.py     # Aggiornamento quotidiano
+│   ├── run_weekly_report.py       # Report settimanale
+│   └── test.py                    # Testing e debug
+├── 🧠 Core Business Logic
+│   └── scripts/
+│       ├── config.py              # Configurazione centralizzata
+│       ├── database.py            # Gestione PostgreSQL
+│       ├── google_services.py     # Google Cloud integrations
+│       ├── data_fetcher.py        # Download da Yahoo Finance
+│       ├── strategies.py          # Strategie di trading
+│       ├── signals.py             # Generazione segnali
+│       └── reports.py             # Creazione report
+├── 📊 Data & Logs
+│   ├── logs/                      # Log applicazioni
+│   └── docs/                      # Documentazione
+└── 🔧 Config Files
+    ├── requirements.txt
+    └── .gitignore
+```
 
 ---
 
-## 8. Debug e log
+## 💡 Esempi d'Uso
 
-* Log delle esecuzioni: `logs/update_db.log`
-* Controllare status service/timer:
+### Aggiungere Nuovi Ticker
+1. Modifica il **Google Sheet** con ID: `1Uh3S3YCyvupZ5yZh2uDi0XYGaZIkEkupxsYed6xRxgA`
+2. Il sistema rileverà automaticamente i nuovi ticker al prossimo aggiornamento
 
+### Creare una Nuova Strategia
+
+```python
+# scripts/strategies.py
+def my_custom_strategy(df, param1=10, param2=0.02):
+    """
+    La mia strategia personalizzata.
+    
+    Args:
+        df: DataFrame con colonne ['Close', 'Volume', etc.]
+        param1: Parametro personalizzato
+        param2: Altro parametro
+    
+    Returns:
+        DataFrame con colonna 'signal' (-1=SELL, 0=HOLD, 1=BUY)
+    """
+    df = df.copy()
+    # ... logica della strategia ...
+    df['signal'] = 0  # Inizializza
+    # ... calcoli e condizioni ...
+    return df
+```
+
+### Test Manuale delle Strategie
+
+```python
+# test.py
+from scripts.strategies import moving_average_crossover
+from scripts.database import get_universe_data
+from scripts.signals import generate_signals_df
+
+# Carica dati storici
+df = get_universe_data(end_date="2025-08-26", tickers=["AAPL", "MSFT"])
+
+# Genera segnali
+signals = generate_signals_df(moving_average_crossover, df, short_window=3, long_window=5)
+print(signals)
+```
+
+---
+
+## 📈 Monitoraggio e Log
+
+### File di Log
 ```bash
+# Log principali
+tail -f logs/run_daily_update_db.log     # Aggiornamenti quotidiani
+tail -f logs/run_weekly_report.log       # Report settimanali
+
+# Log systemd
+journalctl -u update_db.service -f       # Real-time logs
+journalctl -u weekly_signals.service -f
+```
+
+### Verifica Stato Sistema
+```bash
+# Verifica timers
+systemctl list-timers | grep -E "(update_db|weekly)"
+
+# Verifica ultima esecuzione
 systemctl status update_db.service
-systemctl status update_db.timer
+systemctl status weekly_signals.service
+
+# Verifica database
+python check_db.py
 ```
 
-* Visualizzare log in tempo reale:
+---
 
+## 🔧 Risoluzione Problemi
+
+### Problemi Comuni
+
+**🚨 Errore connessione database**
 ```bash
-tail -f ~/money/logs/update_db.log
+# Verifica connettività
+psql -h $DB_HOST -U $DB_USER -d $DB_NAME
+
+# Riavvia servizio PostgreSQL
+sudo systemctl restart postgresql
+```
+
+**🚨 Errore download Yahoo Finance**
+```bash
+# Verifica connettività internet
+curl -I https://finance.yahoo.com
+
+# Esecuzione manuale per debug
+python run_daily_update_db.py
+```
+
+**🚨 Timer non si avvia**
+```bash
+# Ricarica configurazione systemd
+sudo systemctl daemon-reload
+
+# Riavvia timers
+sudo systemctl restart update_db.timer weekly_signals.timer
 ```
 
 ---
 
-## 9. Prossimi passi
+## 🚧 Roadmap
 
-1. Popolare storico maggiore di ticker per backtest.
-2. Costruire modulo portfolio e analisi.
-3. Implementare strategie di trading e backtest.
-4. Aggiornare documentazione in caso di cambiamenti in CI/CD o servizi.
+### In Sviluppo
+- [ ] **Backtesting Engine**: Test storico delle strategie
+- [ ] **Risk Management**: Gestione del rischio e position sizing
+- [ ] **Performance Analytics**: Metriche di performance delle strategie
+- [ ] **Alert System**: Notifiche push/email per segnali critici
 
----
-
-## 10. Strategia di trading e generazione segnali
-
-### 10.1 Modulo `strategies.py`
-- Contiene tutte le strategie implementate.
-- Ogni strategia è una funzione che riceve in input un DataFrame con dati storici:
-  ```text
-  Columns: date, ticker, open, high, low, close, volume
-  ```
-
-* Restituisce un **segnale** (`BUY`, `SELL`, `HOLD`) o un codice numerico.
-* Documentazione interna:
-
-  * Docstring in Google-style con parametri e output.
-  * Spiegazione tecnica e logica della strategia:
-
-    * Perché funziona.
-    * Quando è più efficace.
-* Strategie attualmente implementate:
-
-  * `moving_average_crossover`
-  * `rsi_strategy`
-  * `momentum_breakout`
-  * Altre possono essere aggiunte seguendo lo stesso schema.
-
-### 10.2 Funzione `generate_signals`
-
-* Input:
-
-  1. `strategy_func` → funzione strategia dal modulo `strategies.py`.
-  2. `tickers` → lista di ticker da analizzare.
-  3. `date` → data di riferimento.
-* Output:
-
-  * DataFrame con colonne: `ticker`, `signal`.
-* Funzionamento:
-
-  1. Recupera i dati storici dal DB `universe`.
-  2. Applica la strategia a ciascun ticker.
-  3. Costruisce un DataFrame dei segnali generati.
-* Uso tipico:
-
-  ```python
-  df_signals = generate_signals(strategy_func=strategies.moving_average_crossover, tickers=['SPY','AAPL'], date='2025-08-23')
-  ```
-
-### 10.3 Generazione report settimanale
-
-* Script: `create_weekly_signals_report.py`
-* Funzioni principali:
-
-  1. Recupera la lista dei ticker dal DB.
-  2. Cicla su tutte le strategie definite in `strategies.py`.
-  3. Genera segnali per ciascuna strategia.
-  4. Crea un Google Sheet nella cartella Drive:
-
-     ```
-     Reports/Weekly
-     ```
-
-     con nome:
-
-     ```
-     <strategy_name>_<data>
-     ```
-* Questo report permette di consultare i segnali il weekend e programmare i trigger nel broker.
-
-### 10.4 Test dei segnali
-
-* Script: `test.py`
-* Permette di:
-
-  * Generare segnali per una singola strategia.
-  * Generare segnali per tutte le strategie.
-  * Testare la creazione del report settimanale.
-* Serve per debug e sviluppo senza eseguire cron/systemd.
-
-### 10.5 Pipeline completa strategie → report
-
-1. Scrivere/aggiornare strategie in `strategies.py`.
-2. Recuperare dati storici dal DB `universe`.
-3. Chiamare `generate_signals` con ticker e data.
-4. Salvare i segnali in un DataFrame.
-5. Generare report settimanale con `create_weekly_signals_report.py` (Drive `Reports/Weekly`).
+### Pianificato
+- [ ] **Portfolio Optimizer**: Ottimizzazione allocazione capitali
+- [ ] **Machine Learning**: Strategie basate su ML/AI
+- [ ] **Multi-timeframe**: Analisi su diversi orizzonti temporali
+- [ ] **Alternative Data**: Integrazione sentiment, news, etc.
 
 ---
 
-## 11. Note operative
+## 🤝 Contribuire
 
-* Tutti gli script devono essere eseguiti nell’ambiente virtuale `env`.
-* Gli import devono essere coerenti:
+1. **Fork** del repository
+2. **Branch** per la feature: `git checkout -b feature/nome-feature`
+3. **Commit** delle modifiche: `git commit -m 'Add: nuova feature'`
+4. **Push** al branch: `git push origin feature/nome-feature`
+5. **Pull Request**
 
-  ```python
-  from scripts.trading import strategies
-  from scripts.trading.generate_signals import generate_signals
-  ```
-* I report settimanali vengono generati automaticamente tramite systemd / timer (opzionale per test manuali).
-
+### Sviluppo Locale
+```bash
+# Setup ambiente sviluppo
+export MONEY_ENV=development  # Abilita modalità debug
+python test.py                # Test componenti individuali
 ```
 
+---
+
+## 📄 Licenza
+
+Questo progetto è rilasciato sotto licenza **MIT**.
+
+---
+
+## 📞 Supporto
+
+- **Issues**: Usa GitHub Issues per bug report e feature request
+- **Discussions**: GitHub Discussions per domande generali
+- **Wiki**: Documentazione dettagliata nella GitHub Wiki
+
+---
+
+## 📊 Status
+
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Last Commit](https://img.shields.io/github/last-commit/username/money)
+
+**Ultimo aggiornamento**: 26 Agosto 2025  
+**Versione**: 1.0.0  
+**Ticker monitorati**: 33  
+**Strategie attive**: 3

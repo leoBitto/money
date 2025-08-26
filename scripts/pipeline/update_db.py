@@ -68,6 +68,3 @@ def update_daily_prices():
         return
     
     print("🎉 Aggiornamento completato con successo!")
-
-if __name__ == "__main__":
-    update_daily_prices()

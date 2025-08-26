@@ -1,23 +1,19 @@
-# generate_weekly_report.py (SCRIPT MASTER)
+# run_update_db.py (SCRIPT MASTER)
 """
-Script master per generare il report settimanale completo
+Script master per aggiornare il db
 """
-from scripts.reports.generate_weekly_signals_report import generate_weekly_report
+from scripts.pipeline.update_db import update_daily_prices
 import sys
 from datetime import datetime
 
 def main():
-    """
-    Orchestrazione completa:
-    1. Aggiorna i prezzi nel DB
-    2. Genera il report settimanale
-    """
-    print("🚀 AVVIO GENERAZIONE REPORT SETTIMANALE")
+
+    print("🚀 AVVIO UPDATE DB")
     print("=" * 50)
     
     try:
 
-        generate_weekly_report()
+        update_daily_prices()
         print()
         
         print("🎉 OPERAZIONE COMPLETATA CON SUCCESSO!")

@@ -4,7 +4,7 @@ import psycopg2.extras
 import pandas as pd
 from typing import Optional, List, Dict, Any, Tuple
 from contextlib import contextmanager
-from .gcp_utils import get_secret
+from ..gcp_utils import SecretManager
 
 class DatabaseManager:
     """Gestisce le operazioni con il database PostgreSQL"""
@@ -17,7 +17,8 @@ class DatabaseManager:
             db_info: Dict con le credenziali DB. Se None, le carica da Secret Manager
         """
         if db_info is None:
-            db_info = get_secret("db_info")
+            secret_manager = SecretManager()
+            db_info = secret_manager.get_secret("db_info")
         self.db_info = db_info
     
     def get_connection(self):
@@ -160,12 +161,4 @@ class DatabaseManager:
         
         return df
 
-# Funzioni di convenienza per compatibilità con codice esistente
-def get_db_connection(secret_name: str = "projects/trading-469418/secrets/db_info/versions/latest"):
-    """Funzione di convenienza per ottenere una connessione DB (compatibilità)"""
-    # Estrae il nome del secret dal path completo
-    if "/" in secret_name:
-        secret_name = secret_name.split("/")[-3]  # estrae 'db_info' da path completo
-    
-    db_manager = DatabaseManager()
-    return db_manager.get_connection()
+# Rimosse funzioni di compatibilità - usa direttamente DatabaseManager()

@@ -3,9 +3,9 @@ import pandas as pd
 from typing import Callable, List, Optional, Dict
 from datetime import datetime
 
-# Import delle utilities
-from ..utils.db_utils import DatabaseManager
-from ..utils.trading_utils import apply_strategy_to_ticker, validate_strategy_parameters
+# Import delle utilities - CORREZIONE IMPORT PATHS
+from scripts.utils.db.db_utils import DatabaseManager
+from scripts.utils.trading_utils import apply_strategy_to_ticker, validate_strategy_parameters
 from .strategies import *
 
 def generate_signals(strategy_func: Callable, date: str, tickers: Optional[List[str]] = None, **strategy_kwargs) -> pd.DataFrame:

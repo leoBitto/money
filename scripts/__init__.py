@@ -5,3 +5,4 @@ from . import google_services
 from . import signals
 from . import reports
 from . import strategies
+from . import backtest

@@ -24,7 +24,7 @@ from gspread_dataframe import set_with_dataframe
 from . import config
 from .google_services import get_gsheet_client
 from .signals import generate_signals_df
-from .trading import strategies
+from . import strategies
 from .database import get_universe_data, get_available_tickers
 
 

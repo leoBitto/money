@@ -36,7 +36,7 @@ from scripts.portfolio import (
     get_portfolio_positions,
     get_portfolio_snapshots_bulk
 )
-from scripts.database import get_available_tickers
+from scripts.database import get_available_tickers, execute_query
 
 # Configurazione test
 TEST_PORTFOLIO_NAME = "test_demo"
@@ -50,6 +50,8 @@ def test_1_create_tables():
     print("="*60)
     
     try:
+        execute_query("DROP TABLE IF EXISTS portfolio_positions CASCADE", fetch=False)
+        execute_query("DROP TABLE IF EXISTS portfolio_snapshots CASCADE", fetch=False)
         create_portfolio_tables()
         print("✅ Test 1 PASSATO: Tabelle create con successo")
         return True

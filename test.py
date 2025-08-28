@@ -37,5 +37,5 @@ if __name__ == "__main__":
 CREATE INDEX idx_portfolio_snapshots_date ON portfolio_snapshots(date);
 
     """
-    db.execute_query(query, fetch=FALSE)
+    db.execute_query(query, fetch=False)
     

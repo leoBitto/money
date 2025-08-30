@@ -24,4 +24,5 @@ jobs:
           cd ${{ secrets.SERVER_PATH }}
           git pull origin main
           sudo systemctl restart ${{ secrets.SERVICE_NAME }}
+          sudo systemctl restart money.service
         "

@@ -22,6 +22,14 @@ def create_app():
     app.secret_key = config.SECRET_KEY
     
     login_manager.init_app(app)
+    login_manager.login_view = "auth.login"
+
+    @app.before_request
+    def require_login():
+        allowed_routes = ["auth.login", "static"]
+        if not current_user.is_authenticated and request.endpoint not in allowed_routes:
+            return redirect(url_for("auth.login"))
+
 
     # Importa blueprint
     from app.auth import auth_bp

@@ -1,5 +1,5 @@
-from flask import Flask
-from flask_login import LoginManager, UserMixin
+from flask import Flask, request, redirect, url_for
+from flask_login import LoginManager, UserMixin, current_user
 from scripts import config
 
 login_manager = LoginManager()

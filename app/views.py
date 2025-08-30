@@ -29,20 +29,27 @@ def database():
 @views_bp.route("/database/run", methods=["POST"])
 @login_required
 def run_query():
-    query = request.form.get("query")
+    query = request.form.get("query", "")
     results = []
     columns = []
+    error = None
 
-    if query:
+    if not query.strip():
+        error = "⚠️ Nessuna query inviata"
+    else:
         try:
             fetched = execute_query(query)
             if fetched:
                 columns = [f"Col{i}" for i in range(len(fetched[0]))]
                 results = fetched
             else:
-                flash("⚠️ Nessun risultato trovato")
+                error = "⚠️ Nessun risultato"
         except Exception as e:
-            flash(f"❌ Errore: {e}")
+            error = f"❌ Errore SQL: {e}"
 
-    # renderizzi il frammento dei risultati
-    return render_template("fragments/query_results.html", results=results, columns=columns)
+    return render_template(
+        "fragments/query_results.html",
+        results=results,
+        columns=columns,
+        error=error
+    )

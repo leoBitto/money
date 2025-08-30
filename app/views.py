@@ -37,10 +37,12 @@ def run_query():
         try:
             fetched = execute_query(query)
             if fetched:
-                columns = [desc[0] for desc in fetched[0]._fields] if hasattr(fetched[0], "_fields") else [f"Col{i}" for i in range(len(fetched[0]))]
+                columns = [f"Col{i}" for i in range(len(fetched[0]))]
                 results = fetched
+            else:
+                flash("⚠️ Nessun risultato trovato")
         except Exception as e:
-            return f"<div class='alert alert-danger'>❌ Errore: {e}</div>"
+            flash(f"❌ Errore: {e}")
 
-    # Ritorniamo solo il frammento HTML della tabella
+    # renderizzi il frammento dei risultati
     return render_template("fragments/query_results.html", results=results, columns=columns)

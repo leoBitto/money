@@ -98,13 +98,14 @@ def _get_connection_context(db_info: Optional[dict] = None):
 # External functions
 # ================================
 
-def execute_query(query: str, params: Optional[Tuple] = None, fetch: bool = True) -> Optional[List[Tuple]]:
-    """Esegue una query SQL generica."""
+def execute_query(query: str, params: Optional[Tuple] = None, fetch: bool = True):
+    """Esegue una query SQL generica e restituisce risultati + nomi colonne."""
     with _get_connection_context() as conn:
         with conn.cursor() as cursor:
             cursor.execute(query, params)
-            return cursor.fetchall() if fetch else None
-
+            results = cursor.fetchall() if fetch else []
+            column_names = [desc[0] for desc in cursor.description] if cursor.description else []
+            return results, column_names
 
 def execute_many(query: str, params_list: List[Tuple]) -> None:
     """Esegue la stessa query con parametri multipli (batch insert/update)."""

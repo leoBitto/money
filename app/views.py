@@ -38,14 +38,15 @@ def run_query():
         error = "⚠️ Nessuna query inviata"
     else:
         try:
-            fetched = execute_query(query)
+            fetched, column_names = execute_query(query)
             if fetched:
-                columns = [f"Col{i}" for i in range(len(fetched[0]))]
+                columns = column_names  # qui metti i nomi reali
                 results = fetched
             else:
                 error = "⚠️ Nessun risultato"
         except Exception as e:
             error = f"❌ Errore SQL: {e}"
+
 
     return render_template(
         "fragments/query_results.html",

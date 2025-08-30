@@ -18,22 +18,20 @@
 </head>
 <body class="bg-light">
 
-  <!-- Navbar -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
-      <a class="navbar-brand" href="{{ url_for('views.home') }}">
+      <a class="navbar-brand" href="{{ url_for('views.welcome') }}">
         <i class="fa-solid fa-chart-line"></i> Money Dashboard
       </a>
       <div>
-        <a class="btn btn-sm btn-outline-light" href="{{ url_for('auth.login') }}">
-          <i class="fa-solid fa-user"></i> Login
-        </a>
-        <a class="btn btn-sm btn-outline-danger" href="{{ url_for('auth.logout') }}">
-          <i class="fa-solid fa-right-from-bracket"></i> Logout
-        </a>
+        <a class="btn btn-sm btn-outline-light" href="{{ url_for('views.analytics') }}">Analytics</a>
+        <a class="btn btn-sm btn-outline-light" href="{{ url_for('views.portfolio') }}">Portfolio</a>
+        <a class="btn btn-sm btn-outline-light" href="{{ url_for('views.database') }}">Database</a>
+        <a class="btn btn-sm btn-outline-danger" href="{{ url_for('auth.logout') }}">Logout</a>
       </div>
     </div>
   </nav>
+  
 
   <!-- Main container -->
   <main class="container py-4">

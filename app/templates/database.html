@@ -1,8 +1,14 @@
 {% extends "base.html" %}
-
-{% block title %}Database - Trading Dashboard{% endblock %}
-
+{% block title %}Database{% endblock %}
 {% block content %}
-<h2>Database </h2>
-<p>Contenuti da implementare qui.</p>
+<h2>💾 Database</h2>
+
+<form hx-post="{{ url_for('views.run_query') }}" hx-target="#results" hx-swap="innerHTML">
+  <textarea name="query" class="form-control mb-2" rows="3" placeholder="Scrivi la query SQL"></textarea>
+  <button class="btn btn-primary"><i class="fa-solid fa-play"></i> Esegui</button>
+</form>
+
+<div id="results">
+  <!-- Qui HTMX caricherà i risultati -->
+</div>
 {% endblock %}

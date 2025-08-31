@@ -10,10 +10,48 @@
     <a href="{{ url_for('views.analytics') }}" class="btn btn-outline-primary">
       <i class="fa-solid fa-chart-pie"></i> Analytics
     </a>
-    <!-- altre pagine future -->
-    <a href="#" class="btn btn-outline-secondary">
+    <a href="{{ url_for('views.portfolio') }}" class="btn btn-outline-success">
+      <i class="fa-solid fa-briefcase"></i> Portfolio
+    </a>
+    <a href="{{ url_for('views.database') }}" class="btn btn-outline-secondary">
       <i class="fa-solid fa-database"></i> Gestione DB
     </a>
+    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger">
+      <i class="fa-solid fa-right-from-bracket"></i> Logout
+    </a>
+
+    <!-- Pulsante che apre il modal -->
+    <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#runScriptModal">
+      <i class="fa-solid fa-play"></i> Esegui Data Fetcher
+    </button>
+  </div>
+</div>
+
+<!-- Modal con il form -->
+<div class="modal fade" id="runScriptModal" tabindex="-1" aria-labelledby="runScriptModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="POST" action="{{ url_for('views.run_script') }}">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="runScriptModalLabel">Esegui Data Fetcher</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Chiudi"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="start_date" class="form-label">Data inizio</label>
+            <input type="date" id="start_date" name="start_date" class="form-control" required>
+          </div>
+          <div class="mb-3">
+            <label for="end_date" class="form-label">Data fine</label>
+            <input type="date" id="end_date" name="end_date" class="form-control">
+            <div class="form-text">Se vuoto, verrà usata la data odierna.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn btn-warning">Esegui</button>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 {% endblock %}

@@ -1,6 +1,8 @@
 from flask import Blueprint, render_template, request
 from flask_login import login_required
-from scripts.database import execute_query
+from datetime import datetime
+from scripts import database, google_services, data_fetcher
+
 
 views_bp = Blueprint("views", __name__)
 
@@ -9,6 +11,34 @@ views_bp = Blueprint("views", __name__)
 def welcome():
     return render_template("welcome.html")
 
+@views.route("/run-script", methods=["POST"])
+def run_script():
+    try:
+        start_date = request.form.get("start_date")
+        end_date = request.form.get("end_date") or datetime.today().strftime("%Y-%m-%d")
+
+        if not start_date:
+            flash("Devi specificare una data di inizio", "danger")
+            return redirect(url_for("views.welcome"))
+
+        # 1. Prendo i tickers da Google Sheets
+        tickers = google_services.get_universe_tickers_from_gsheet()
+
+        # 2. Trunco la tabella universe
+        database.execute_query("TRUNCATE TABLE universe RESTART IDENTITY CASCADE", fetch=False)
+
+        # 3. Scarico i dati da yfinance
+        rows = data_fetcher.get_data_for_db_between_dates(tickers, start_date, end_date)
+
+        # 4. Inserisco i dati nel DB
+        inserted = database.insert_batch_universe(rows, conflict_resolution="DO NOTHING")
+
+        flash(f"Script eseguito correttamente ✅ ({inserted} righe inserite)", "success")
+    except Exception as e:
+        flash(f"Errore durante l'esecuzione: {e}", "danger")
+
+    return redirect(url_for("views.welcome"))
+    
 @views_bp.route("/analytics")
 @login_required
 def analytics():
@@ -38,7 +68,7 @@ def run_query():
         error = "⚠️ Nessuna query inviata"
     else:
         try:
-            fetched, column_names = execute_query(query)
+            fetched, column_names = database.execute_query(query)
             if fetched:
                 columns = column_names  # qui metti i nomi reali
                 results = fetched

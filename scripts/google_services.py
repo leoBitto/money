@@ -85,3 +85,12 @@ def get_gsheet_client(service_account_info: dict | None = None,
     
     creds = Credentials.from_service_account_info(service_account_info, scopes=scopes)
     return gspread.authorize(creds)
+
+def get_universe_tickers_from_gsheet() -> list[str]:
+    """
+    Legge la lista dei tickers dallo spreadsheet Universe.
+    """
+    client = get_gsheet_client()
+    sheet = client.open_by_key(config.UNIVERSE_SPREADSHEET_ID).sheet1
+    tickers = sheet.col_values(4)  # assumiamo colonna A
+    return [t.strip().upper() for t in tickers if t.strip()]

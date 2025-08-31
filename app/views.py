@@ -11,7 +11,7 @@ views_bp = Blueprint("views", __name__)
 def welcome():
     return render_template("welcome.html")
 
-@views.route("/run-script", methods=["POST"])
+@views_bp.route("/run-script", methods=["POST"])
 def run_script():
     try:
         start_date = request.form.get("start_date")
@@ -38,7 +38,7 @@ def run_script():
         flash(f"Errore durante l'esecuzione: {e}", "danger")
 
     return redirect(url_for("views.welcome"))
-    
+
 @views_bp.route("/analytics")
 @login_required
 def analytics():

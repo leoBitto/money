@@ -142,3 +142,33 @@ def get_daily_data_for_db(tickers: List[str]) -> List[Tuple]:
 
     # Converte in lista di tuple
     return list(norm_df.itertuples(index=False, name=None))
+
+
+def get_data_for_db_between_dates(
+    tickers: List[str],
+    start_date: str,
+    end_date: str | None = None
+) -> List[Tuple]:
+    """
+    Scarica dati da yfinance tra due date e li normalizza per il DB.
+
+    Args:
+        tickers: lista di ticker
+        start_date: data inizio (YYYY-MM-DD)
+        end_date: data fine (YYYY-MM-DD), se None usa oggi
+
+    Returns:
+        Lista di tuple (date, ticker, open, high, low, close, volume)
+    """
+    raw_df = yf.download(
+        tickers=tickers,
+        start=start_date,
+        end=end_date,
+        interval=config.YFINANCE_DEFAULT_INTERVAL,
+        group_by="ticker",
+        auto_adjust=False,
+        threads=True,
+        progress=False,
+    )
+    norm_df = _normalize_yf_dataframe(raw_df, tickers)
+    return list(norm_df.itertuples(index=False, name=None))

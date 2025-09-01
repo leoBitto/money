@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, request
+from flask import Blueprint, render_template, request, flash
 from flask_login import login_required
 from datetime import datetime
 from scripts.database import insert_batch_universe, execute_query

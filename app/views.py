@@ -4,6 +4,23 @@ from datetime import datetime
 from scripts.database import insert_batch_universe, execute_query
 from scripts.google_services import get_universe_tickers_from_gsheet
 from scripts.data_fetcher import get_data_for_db_between_dates
+import logging
+import os
+from logging.handlers import TimedRotatingFileHandler
+
+# Assicurati che la cartella esista
+os.makedirs("logs", exist_ok=True)
+
+# Logger principale
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# Rotating file handler giornaliero
+handler = TimedRotatingFileHandler("logs/app.log", when="midnight", interval=1)
+handler.suffix = "%Y-%m-%d"
+formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 
 views_bp = Blueprint("views", __name__)
@@ -21,23 +38,25 @@ def run_script():
 
         if not start_date:
             flash("Devi specificare una data di inizio", "danger")
+            logger.warning("Esecuzione script fallita: data di inizio mancante")
             return redirect(url_for("views.welcome"))
 
         # 1. Prendo i tickers da Google Sheets
         tickers = get_universe_tickers_from_gsheet()
-        flash(f"Tickers : {tickers}")
-        # 2. Trunco la tabella universe
+        logger.info(f"Tickers scaricati: {tickers}")
+
         execute_query("TRUNCATE TABLE universe RESTART IDENTITY CASCADE", fetch=False)
+        logger.info("Tabella universe troncata")
 
-        # 3. Scarico i dati da yfinance
         rows = get_data_for_db_between_dates(tickers, start_date, end_date)
-
-        # 4. Inserisco i dati nel DB
         inserted = insert_batch_universe(rows, conflict_resolution="DO NOTHING")
 
         flash(f"Script eseguito correttamente ✅ ({inserted} righe inserite)", "success")
+        logger.info(f"Script eseguito correttamente: {inserted} righe inserite")
     except Exception as e:
         flash(f"Errore durante l'esecuzione: {e}", "danger")
+        logger.exception(f"Errore esecuzione script: {e}")  # logga stacktrace completa
+
 
     return redirect(url_for("views.welcome"))
 
@@ -72,12 +91,15 @@ def run_query():
         try:
             fetched, column_names = execute_query(query)
             if fetched:
-                columns = column_names  # qui metti i nomi reali
+                columns = column_names
                 results = fetched
+                logger.info(f"Query eseguita correttamente: {query}")
             else:
                 error = "⚠️ Nessun risultato"
+                logger.warning(f"Query senza risultati: {query}")
         except Exception as e:
             error = f"❌ Errore SQL: {e}"
+            logger.exception(f"Errore SQL durante l'esecuzione della query: {query}")
 
 
     return render_template(

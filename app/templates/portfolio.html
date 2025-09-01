@@ -2,7 +2,76 @@
 
 {% block title %}Portfolio - Trading Dashboard{% endblock %}
 
+
 {% block content %}
-<h2>Portfolio</h2>
-<p>Contenuti da implementare qui.</p>
+<div class="container my-4">
+    <form method="POST" class="mb-4">
+        <label for="portfolio" class="form-label fw-bold">Seleziona Portfolio:</label>
+        <select name="portfolio" id="portfolio" class="form-select w-auto d-inline-block" onchange="this.form.submit()">
+            <option value="">-- Scegli --</option>
+            {% for pf in portfolios %}
+                <option value="{{ pf }}" {% if pf == selected_portfolio %}selected{% endif %}>{{ pf }}</option>
+            {% endfor %}
+        </select>
+    </form>
+
+    {% if portfolio_data %}
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h2 class="h5 mb-0">Dashboard Portfolio: {{ portfolio_data.name }}</h2>
+        </div>
+        <div class="card-body">
+            <ul class="list-group list-group-flush">
+                <li class="list-group-item"><strong>Data:</strong> {{ portfolio_data.date }}</li>
+                <li class="list-group-item"><strong>Cash disponibile:</strong> €{{ portfolio_data.cash }}</li>
+                <li class="list-group-item"><strong>Valore totale:</strong> €{{ portfolio_data.total_value }}</li>
+                <li class="list-group-item"><strong>Numero posizioni:</strong> {{ portfolio_data.positions_count }}</li>
+                <li class="list-group-item"><strong>Rischio totale:</strong> {{ portfolio_data.total_risk_pct }}%</li>
+                <li class="list-group-item"><strong>Posizione più grande:</strong> {{ portfolio_data.largest_position_pct }}%</li>
+            </ul>
+        </div>
+    </div>
+
+    <h3>Posizioni</h3>
+    <table class="table table-striped table-hover">
+        <thead class="table-dark">
+            <tr>
+                <th>Ticker</th>
+                <th>Shares</th>
+                <th>Avg Cost</th>
+                <th>Current Price</th>
+                <th>Current Value</th>
+                <th>PnL %</th>
+                <th>Stop Loss</th>
+                <th>First Target</th>
+                <th>Breakeven</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for pos in positions_data %}
+            <tr>
+                <td>{{ pos.ticker }}</td>
+                <td>{{ pos.shares }}</td>
+                <td>€{{ pos.avg_cost }}</td>
+                <td>€{{ pos.current_price }}</td>
+                <td>€{{ pos.current_value }}</td>
+                <td class="{% if pos.pnl_pct >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    {% if pos.pnl_pct >= 0 %}
+                        <i class="fa-solid fa-arrow-up"></i>
+                    {% else %}
+                        <i class="fa-solid fa-arrow-down"></i>
+                    {% endif %}
+                    {{ pos.pnl_pct | round(2) }}%
+                </td>
+                <td>{{ pos.stop_loss if pos.stop_loss else '-' }}</td>
+                <td>{{ pos.first_target if pos.first_target else '-' }}</td>
+                <td>{{ pos.breakeven if pos.breakeven else '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+</div>
 {% endblock %}
+
+

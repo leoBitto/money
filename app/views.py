@@ -4,6 +4,7 @@ from datetime import datetime
 from scripts.database import insert_batch_universe, execute_query
 from scripts.google_services import get_universe_tickers_from_gsheet
 from scripts.data_fetcher import get_data_for_db_between_dates
+form scripts.portfolio import Portfolio, Position, get_portfolio_names
 import logging
 import os
 from logging.handlers import TimedRotatingFileHandler
@@ -64,10 +65,51 @@ def run_script():
 def analytics():
     return render_template("analytics.html")
 
-@views_bp.route("/portfolio")
+@views_bp.route("/portfolio", methods=["GET", "POST"])
 @login_required
 def portfolio():
-    return render_template("portfolio.html")
+    # Lista portfolio disponibili (da DB o configurazione)
+    portfolios = [row[0] for row in get_portfolio_names()]  # puoi sostituire con query DB
+    
+    selected_portfolio = request.form.get("portfolio")  # ricevi il portfolio selezionato
+    
+    portfolio_data = None
+    positions_data = []
+    
+    if selected_portfolio:
+        p = Portfolio(selected_portfolio)  # istanzia il portfolio
+        portfolio_data = {
+            "name": p.name,
+            "date": p.date,
+            "cash": p.get_cash_balance(),
+            "total_value": p.get_total_value(),
+            "positions_count": p.get_positions_count(),
+            "total_risk_pct": p.get_total_risk_pct(),
+            "largest_position_pct": p.get_largest_position_pct(),
+        }
+        positions_data = [
+            {
+                "ticker": pos.ticker,
+                "shares": pos.shares,
+                "avg_cost": pos.avg_cost,
+                "current_price": pos.current_price,
+                "current_value": pos.get_current_value(),
+                "pnl_pct": pos.get_unrealized_pnl_pct(),
+                "stop_loss": pos.stop_loss,
+                "first_target": pos.first_target,
+                "breakeven": pos.breakeven,
+            }
+            for pos in p._positions.values()
+        ]
+    
+    return render_template(
+        "portfolio.html",
+        portfolios=portfolios,
+        selected_portfolio=selected_portfolio,
+        portfolio_data=portfolio_data,
+        positions_data=positions_data,
+    )
+
 
 @views_bp.route("/database", methods=["GET"])
 @login_required

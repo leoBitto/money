@@ -1,521 +1,805 @@
 # scripts/portfolio.py
 """
-Modulo: portfolio
-=================
+Modulo: portfolio (Refactored with OOP)
+=======================================
 
-Gestione completa dello stato dei portafogli e delle loro metriche.
+Gestione completa dello stato dei portafogli tramite classi Portfolio e Position.
 
-FUNZIONALITÀ PRINCIPALI:
-1. Inizializzazione tabelle DB (`create_portfolio_tables`)
-2. Creazione portafogli (`create_portfolio`)  
-3. Registrazione operazioni (`add_operation`)
-4. Aggiornamento giornaliero (`update_portfolio`)
-5. Lettura dati (`get_portfolio_*`)
+CLASSI PRINCIPALI:
+1. Portfolio: Container per tutte le posizioni e metriche di un portfolio
+2. Position: Singola posizione con risk management e performance tracking
+
+FUNZIONI MODULO:
+- create_portfolio_tables(): Inizializzazione tabelle DB
+- create_new_portfolio(): Factory per nuovi portfolio
+- get_portfolio_names(): Lista portfolio disponibili
 
 DIPENDENZE:
 - database.execute_query() per tutte le operazioni DB
-- universe table per prezzi correnti
+- universe table per prezzi correnti  
+- config.py per parametri e defaults
 
 USO TIPICO:
->>> from scripts.portfolio import create_portfolio_tables, create_portfolio, add_operation
+>>> from scripts.portfolio import Portfolio, create_portfolio_tables
 >>> create_portfolio_tables()  # Prima volta
->>> create_portfolio("demo", 10000.0)
->>> add_operation("demo", "BUY", "AAPL", 10, 150.0, "2025-08-28")
+>>> portfolio = Portfolio("demo", "2025-09-01")
+>>> portfolio.get_positions_count()  # 3
+>>> portfolio.get_cash_balance()     # 5000.0
 """
 
 import pandas as pd
+import logging
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, timedelta
+from statistics import stdev
 
 from . import database
+from . import config
+
+# Setup logging
+logger = logging.getLogger(__name__)
 
 
-# ================================
-# 1. INIZIALIZZAZIONE DATABASE
-# ================================
-
-def create_portfolio_tables() -> None:
+def create_new_portfolio(name: str, initial_cash: float = 10000.0, date: Optional[str] = None):
     """
-    Crea le tabelle necessarie per il tracking dei portafogli.
-    
-    TABELLE CREATE:
-    - portfolio_snapshots: metriche aggregate per data/portfolio
-    - portfolio_positions: posizioni dettagliate per data/portfolio
-    """
-    
-    # Tabella snapshots (metriche aggregate)
-    snapshots_query = """
-    CREATE TABLE IF NOT EXISTS portfolio_snapshots (
-        date DATE NOT NULL,
-        portfolio_name VARCHAR(50) NOT NULL DEFAULT 'default',
-        
-        -- Valori base portafoglio
-        total_value DECIMAL(12,2) NOT NULL,
-        cash_balance DECIMAL(12,2) NOT NULL,
-        positions_count INTEGER DEFAULT 0,
-        
-        -- Metriche performance
-        daily_return_pct DECIMAL(8,4),
-        portfolio_volatility DECIMAL(8,4),
-        current_drawdown_pct DECIMAL(8,4),
-        peak_value DECIMAL(12,2),
-        
-        -- Metadata
-        created_at TIMESTAMP DEFAULT NOW(),
-        
-        PRIMARY KEY (date, portfolio_name)
-    );
-    """
-    
-    # Tabella posizioni dettagliate
-    positions_query = """
-    CREATE TABLE IF NOT EXISTS portfolio_positions (
-        date DATE NOT NULL,
-        portfolio_name VARCHAR(50) NOT NULL DEFAULT 'default',
-        ticker VARCHAR(10) NOT NULL,
-        
-        -- Dati posizione
-        shares INTEGER NOT NULL,
-        avg_cost DECIMAL(10,4) NOT NULL,
-        current_price DECIMAL(10,4) NOT NULL,
-        current_value DECIMAL(12,2) NOT NULL,
-        
-        -- Metriche posizione
-        position_weight_pct DECIMAL(8,4),
-        position_pnl_pct DECIMAL(8,4),
-        position_volatility DECIMAL(8,4),
-        
-        -- Metadata
-        created_at TIMESTAMP DEFAULT NOW(),
-        
-        PRIMARY KEY (date, portfolio_name, ticker)
-    );
-    """
-    
-    # Indici per performance
-    indices_query = """
-    CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_date 
-        ON portfolio_snapshots(date);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_positions_ticker 
-        ON portfolio_positions(ticker);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_positions_weight 
-        ON portfolio_positions(position_weight_pct DESC);
-    """
-    
-    # Esegui creazione
-    database.execute_query(snapshots_query, fetch=False)
-    database.execute_query(positions_query, fetch=False)
-    database.execute_query(indices_query, fetch=False)
-    
-    print("✅ Tabelle portfolio create con successo:")
-    print("   📊 portfolio_snapshots")
-    print("   📈 portfolio_positions")
-    print("   🔍 Indici di performance")
-
-
-# ================================
-# 2. CREAZIONE PORTAFOGLI
-# ================================
-
-def create_portfolio(name: str, 
-                     initial_cash: float,
-                     positions: Optional[Dict[str, Dict[str, float]]] = None,
-                     date: Optional[str] = None,
-                     overwrite: bool = True) -> None:
-    """
-    Crea un nuovo portafoglio con cash iniziale e posizioni opzionali.
+    Crea un nuovo portfolio nel DB con solo cash iniziale.
     
     Args:
-        name: Nome del portafoglio
-        initial_cash: Cash iniziale disponibile
-        positions: Posizioni iniziali {"AAPL": {"shares": 10, "avg_cost": 150.0}}
-        date: Data creazione (default: oggi)
-        overwrite: Se True, sovrascrive portfolio esistente
+        name: Nome del portfolio
+        initial_cash: Cash iniziale
+        date: Data (default: oggi)
     """
-    if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
+    from datetime import datetime
+    date = date or datetime.today().strftime("%Y-%m-%d")
+
+    query = """
+        INSERT INTO portfolio_snapshots
+        (date, portfolio_name, total_value, cash_balance, positions_count, daily_return_pct)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (date, portfolio_name) DO NOTHING
+    """
+    params = (date, name, initial_cash, initial_cash, 0, 0.0)
+    database.execute_query(query, params, fetch=False)
+
+
+# ================================
+# 1. PORTFOLIO CLASS
+# ================================
+
+class Portfolio:
+    """
+    Container per un portfolio specifico (nome + data).
     
-    # Verifica esistenza (e rimuovi se overwrite)
-    if overwrite:
-        _delete_portfolio_data(name, date)
-    else:
-        check_query = """
-            SELECT COUNT(*) FROM portfolio_snapshots 
-            WHERE portfolio_name = %s AND date = %s
+    Gestisce:
+    - Stato corrente (cash, posizioni, valore totale)
+    - Metriche performance (returns, drawdown, volatility, Sharpe)
+    - Risk management (capital at risk, concentration)
+    - Operazioni (add/update positions)
+    
+    Attributes:
+        name (str): Nome del portfolio
+        date (str): Data dello snapshot (YYYY-MM-DD)
+        _snapshot (dict): Metriche aggregate del portfolio
+        _positions (dict): Posizioni dettagliate {ticker: Position}
+    """
+    
+    def __init__(self, name: str, date: Optional[str] = None):
         """
-        result = database.execute_query(check_query, (name, date))
-        if result and result[0][0] > 0:
-            raise ValueError(f"Portfolio '{name}' già esiste per {date}")
-    
-    # Portfolio vuoto (solo cash)
-    if not positions:
-        snapshot_data = {
-            'total_value': initial_cash,
-            'cash_balance': initial_cash,
-            'positions_count': 0,
-            'daily_return_pct': 0.0
-        }
-        _insert_snapshot(date, name, snapshot_data)
-        print(f"✅ Portfolio '{name}' creato con €{initial_cash:,.2f} cash")
-        return
-    
-    # Portfolio con posizioni iniziali
-    _create_portfolio_with_positions(name, initial_cash, positions, date)
-
-
-def _create_portfolio_with_positions(name: str, initial_cash: float, 
-                                   positions: Dict, date: str) -> None:
-    """Helper per creare portfolio con posizioni iniziali"""
-    
-    # 1. Ottieni prezzi correnti
-    tickers = list(positions.keys())
-    current_prices = _get_current_prices(tickers, date)
-    
-    # 2. Calcola metriche posizioni
-    positions_data = []
-    total_positions_value = 0.0
-    
-    for ticker, pos_data in positions.items():
-        shares = pos_data['shares']
-        avg_cost = pos_data['avg_cost']
-        current_price = current_prices[ticker]
-        current_value = shares * current_price
-        pnl_pct = (current_price - avg_cost) / avg_cost
+        Inizializza portfolio caricando dati dal DB.
         
-        positions_data.append({
-            'ticker': ticker,
-            'shares': shares,
-            'avg_cost': avg_cost,
-            'current_price': current_price,
-            'current_value': current_value,
-            'position_pnl_pct': pnl_pct
-        })
-        total_positions_value += current_value
-    
-    # 3. Calcola pesi %
-    total_value = initial_cash + total_positions_value
-    for pos in positions_data:
-        pos['position_weight_pct'] = (pos['current_value'] / total_value) * 100
-    
-    # 4. Inserisci nel DB
-    for pos in positions_data:
-        _insert_position(date, name, pos)
-    
-    snapshot_data = {
-        'total_value': total_value,
-        'cash_balance': initial_cash,
-        'positions_count': len(positions_data),
-        'daily_return_pct': 0.0
-    }
-    _insert_snapshot(date, name, snapshot_data)
-    
-    print(f"✅ Portfolio '{name}' creato:")
-    print(f"   💰 Cash: €{initial_cash:,.2f}")
-    print(f"   📊 Posizioni: €{total_positions_value:,.2f}")
-    print(f"   🎯 Totale: €{total_value:,.2f}")
-
-
-# ================================
-# 3. REGISTRAZIONE OPERAZIONI
-# ================================
-
-def add_operation(portfolio_name: str,
-                 action: str,  # "BUY" o "SELL"
-                 ticker: str,
-                 shares: int,
-                 price: float,
-                 date: Optional[str] = None,
-                 update_portfolio_after: bool = True) -> None:
-    """
-    Registra un'operazione di compravendita e aggiorna il portafoglio.
-    
-    Args:
-        portfolio_name: Nome del portafoglio
-        action: "BUY" o "SELL"
-        ticker: Ticker del titolo
-        shares: Numero di azioni
-        price: Prezzo per azione (dal tuo broker)
-        date: Data operazione (default: oggi)
-        update_portfolio_after: Se aggiornare automaticamente il portfolio
+        Args:
+            name: Nome del portfolio
+            date: Data specifica (default: ultima data disponibile)
+        """
+        self.name = name
+        self.date = date or self._get_latest_date(name)
+        self._snapshot = None
+        self._positions = {}
         
-    Esempio:
-        add_operation("demo", "BUY", "AAPL", 10, 155.50, "2025-08-28")
-        add_operation("demo", "SELL", "MSFT", 5, 310.00)
-    """
-    if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
+        if self.date:
+            self._load_from_db()
+            logger.info(f"Portfolio '{name}' caricato per {self.date}")
+        else:
+            logger.warning(f"Portfolio '{name}' non trovato nel DB")
     
-    if action not in ["BUY", "SELL"]:
-        raise ValueError("Action deve essere 'BUY' o 'SELL'")
+    # =============================
+    # CORE METHODS (Risk Manager)
+    # =============================
     
-    # 1. Ottieni stato portfolio corrente
-    current_snapshot = get_portfolio_snapshot(date, portfolio_name)
-    if not current_snapshot:
-        raise ValueError(f"Portfolio '{portfolio_name}' non trovato per {date}")
+    def get_cash_balance(self) -> float:
+        """Ritorna il cash disponibile nel portfolio."""
+        if not self._snapshot:
+            return 0.0
+        return float(self._snapshot['cash_balance'])
     
-    current_cash = current_snapshot['cash_balance']
-    total_value = shares * price
+    def get_total_value(self) -> float:
+        """Ritorna il valore totale del portfolio (cash + posizioni)."""
+        if not self._snapshot:
+            return 0.0
+        return float(self._snapshot['total_value'])
     
-    # 2. Verifica cash per acquisti
-    if action == "BUY" and current_cash < total_value:
-        raise ValueError(f"Cash insufficiente: €{current_cash:,.2f} < €{total_value:,.2f}")
+    def get_positions_count(self) -> int:
+        """Ritorna il numero di posizioni attive."""
+        return len([pos for pos in self._positions.values() if pos.shares > 0])
     
-    # 3. Aggiorna posizioni esistenti
-    existing_positions = get_portfolio_positions(date, portfolio_name)
-    updated_positions = _process_operation(existing_positions, action, ticker, shares, price)
+    def get_position(self, ticker: str) -> Optional['Position']:
+        """
+        Ritorna la posizione per un ticker specifico.
+        
+        Args:
+            ticker: Symbol del titolo
+            
+        Returns:
+            Position object o None se non esiste
+        """
+        return self._positions.get(ticker)
     
-    # 4. Aggiorna cash
-    if action == "BUY":
-        new_cash = current_cash - total_value
-    else:  # SELL
-        new_cash = current_cash + total_value
-    
-    # 5. Salva nel DB (rimuovi vecchi dati della data)
-    _delete_portfolio_data(portfolio_name, date)
-    
-    # Inserisci posizioni aggiornate
-    for pos in updated_positions:
-        if pos['shares'] > 0:  # Solo posizioni con shares > 0
-            _insert_position(date, portfolio_name, pos)
-    
-    # Inserisci snapshot aggiornato
-    positions_value = sum(pos['current_value'] for pos in updated_positions if pos['shares'] > 0)
-    snapshot_data = {
-        'total_value': new_cash + positions_value,
-        'cash_balance': new_cash,
-        'positions_count': len([p for p in updated_positions if p['shares'] > 0]),
-        'daily_return_pct': 0.0  # Da ricalcolare se serve
-    }
-    _insert_snapshot(date, portfolio_name, snapshot_data)
-    
-    print(f"✅ Operazione registrata: {action} {shares} {ticker} @ €{price:.2f}")
-    print(f"   💰 Nuovo cash: €{new_cash:,.2f}")
-    
-    # 6. Aggiorna portfolio se richiesto
-    if update_portfolio_after:
-        update_portfolio(date, portfolio_name)
-
-
-def _process_operation(existing_positions: pd.DataFrame, 
-                      action: str, ticker: str, shares: int, price: float) -> List[Dict]:
-    """Processa un'operazione aggiornando le posizioni esistenti"""
-    
-    positions_dict = {}
-    
-    # Converti posizioni esistenti in dict
-    for _, row in existing_positions.iterrows():
-        positions_dict[row['ticker']] = {
-            'ticker': row['ticker'],
-            'shares': row['shares'],
-            'avg_cost': row['avg_cost'],
-            'current_price': row['current_price'],
-            'current_value': row['current_value'],
-            'position_weight_pct': row.get('position_weight_pct', 0),
-            'position_pnl_pct': row.get('position_pnl_pct', 0)
-        }
-    
-    # Processa operazione
-    if action == "BUY":
-        if ticker in positions_dict:
-            # Aggiorna posizione esistente (media dei costi)
-            old_pos = positions_dict[ticker]
-            old_shares = old_pos['shares']
-            old_cost = old_pos['avg_cost']
+    def add_position(self, ticker: str, shares: int, avg_cost: float, 
+                     current_price: Optional[float] = None) -> 'Position':
+        """
+        Aggiunge o aggiorna una posizione nel portfolio.
+        
+        Args:
+            ticker: Symbol del titolo
+            shares: Numero di azioni
+            avg_cost: Prezzo medio di carico
+            current_price: Prezzo corrente (default: cerca nel DB)
+            
+        Returns:
+            Position object creata/aggiornata
+        """
+        if current_price is None:
+            current_price = self._get_current_price(ticker)
+        
+        # Controlla se è aggiornamento o nuova posizione
+        existing = self._positions.get(ticker)
+        if existing and existing.shares > 0:
+            # Aggiorna posizione esistente (media costi)
+            old_shares = existing.shares
+            old_cost = existing.avg_cost
             
             new_shares = old_shares + shares
-            new_avg_cost = ((old_shares * old_cost) + (shares * price)) / new_shares
+            new_avg_cost = ((old_shares * old_cost) + (shares * avg_cost)) / new_shares
             
-            positions_dict[ticker].update({
-                'shares': new_shares,
-                'avg_cost': new_avg_cost,
-                'current_price': price,  # Aggiorna al prezzo più recente
-                'current_value': new_shares * price
-            })
+            existing.shares = new_shares
+            existing.avg_cost = new_avg_cost
+            existing.current_price = current_price
+            
+            position = existing
+            logger.info(f"Posizione {ticker} aggiornata: {new_shares} shares @ €{new_avg_cost:.2f}")
         else:
             # Nuova posizione
-            positions_dict[ticker] = {
-                'ticker': ticker,
-                'shares': shares,
-                'avg_cost': price,
-                'current_price': price,
-                'current_value': shares * price,
-                'position_weight_pct': 0,  # Da ricalcolare
-                'position_pnl_pct': 0      # Da ricalcolare
-            }
-    
-    elif action == "SELL":
-        if ticker not in positions_dict:
-            raise ValueError(f"Non puoi vendere {ticker}: posizione non esistente")
+            position = Position(
+                ticker=ticker,
+                shares=shares,
+                avg_cost=avg_cost,
+                current_price=current_price,
+                portfolio=self
+            )
+            self._positions[ticker] = position
+            logger.info(f"Nuova posizione {ticker}: {shares} shares @ €{avg_cost:.2f}")
         
-        old_pos = positions_dict[ticker]
-        if old_pos['shares'] < shares:
-            raise ValueError(f"Shares insufficienti: {old_pos['shares']} < {shares}")
+        # Salva nel DB
+        position._save_to_db()
+        self._update_snapshot()
         
-        new_shares = old_pos['shares'] - shares
-        positions_dict[ticker].update({
-            'shares': new_shares,
-            'current_price': price,
-            'current_value': new_shares * price if new_shares > 0 else 0
-        })
+        return position
     
-    return list(positions_dict.values())
-
-
-# ================================
-# 4. LETTURA DATI
-# ================================
-
-def get_portfolio_snapshot(date: str, portfolio_name: str = "default") -> Optional[Dict]:
-    """Legge snapshot portfolio per una data specifica"""
-    query = """
-        SELECT * FROM portfolio_snapshots 
-        WHERE date = %s AND portfolio_name = %s
-    """
-    result = database.execute_query(query, (date, portfolio_name))
-    if not result:
-        return None
+    def update_position_targets(self, ticker: str, targets: Dict) -> None:
+        """
+        Aggiorna i target di risk management per una posizione.
         
-    row = result[0]
-    return {
-        'date': row[0],
-        'portfolio_name': row[1], 
-        'total_value': float(row[2]),
-        'cash_balance': float(row[3]),
-        'positions_count': row[4],
-        'daily_return_pct': float(row[5]) if row[5] else 0.0,
-        'portfolio_volatility': float(row[6]) if row[6] else 0.0,
-        'current_drawdown_pct': float(row[7]) if row[7] else 0.0
-    }
-
-
-def get_portfolio_positions(date: str, portfolio_name: str = "default") -> pd.DataFrame:
-    """Legge posizioni portfolio per una data specifica"""
-    query = """
-        SELECT ticker, shares, avg_cost, current_price, current_value,
-               position_weight_pct, position_pnl_pct, position_volatility
-        FROM portfolio_positions
-        WHERE date = %s AND portfolio_name = %s
-        ORDER BY current_value DESC
-    """
-    result = database.execute_query(query, (date, portfolio_name))
-    if not result:
-        return pd.DataFrame()
+        Args:
+            ticker: Symbol del titolo
+            targets: Dict con stop_loss, first_target, breakeven
+        """
+        position = self._positions.get(ticker)
+        if not position:
+            raise ValueError(f"Posizione {ticker} non trovata")
+        
+        position.stop_loss = targets.get('stop_loss')
+        position.first_target = targets.get('first_target') 
+        position.breakeven = targets.get('breakeven')
+        
+        position._save_to_db()
+        logger.info(f"Target aggiornati per {ticker}: SL={targets.get('stop_loss'):.2f}")
     
-    columns = ['ticker', 'shares', 'avg_cost', 'current_price', 'current_value',
-               'position_weight_pct', 'position_pnl_pct', 'position_volatility']
-    return pd.DataFrame(result, columns=columns)
-
-
-def get_portfolio_snapshots_bulk(start_date: str, end_date: str, 
-                                portfolio_name: str = "default") -> Dict[str, Dict]:
-    """Legge snapshots multipli per backtest (ottimizzato)"""
-    query = """
-        SELECT date, total_value, cash_balance, positions_count,
-               daily_return_pct, portfolio_volatility, current_drawdown_pct
-        FROM portfolio_snapshots
-        WHERE date BETWEEN %s AND %s AND portfolio_name = %s
-        ORDER BY date
-    """
-    result = database.execute_query(query, (start_date, end_date, portfolio_name))
-    if not result:
-        return {}
+    # =============================
+    # PERFORMANCE METRICS 
+    # =============================
     
-    snapshots = {}
-    for row in result:
-        date_str = row[0].strftime('%Y-%m-%d') if hasattr(row[0], 'strftime') else str(row[0])
-        snapshots[date_str] = {
-            'total_value': float(row[1]),
-            'cash_balance': float(row[2]),
-            'positions_count': row[3],
-            'daily_return_pct': float(row[4]) if row[4] else 0.0,
-            'portfolio_volatility': float(row[5]) if row[5] else 0.0,
-            'current_drawdown_pct': float(row[6]) if row[6] else 0.0
+    def get_total_return_pct(self, start_date: Optional[str] = None) -> Optional[float]:
+        """
+        Calcola il return percentuale del portfolio.
+        
+        Args:
+            start_date: Data di inizio calcolo (default: 30 giorni fa)
+            
+        Returns:
+            Return percentuale o None se dati insufficienti
+        """
+        if start_date is None:
+            start_date = (datetime.strptime(self.date, '%Y-%m-%d') - timedelta(days=30)).strftime('%Y-%m-%d')
+        
+        # Ottieni snapshot iniziale
+        query = """
+            SELECT total_value FROM portfolio_snapshots
+            WHERE portfolio_name = %s AND date >= %s
+            ORDER BY date ASC LIMIT 1
+        """
+        result, _ = database.execute_query(query, (self.name, start_date))
+        if not result:
+            return None
+        
+        initial_value = float(result[0][0])
+        current_value = self.get_total_value()
+        
+        if initial_value == 0:
+            return None
+        
+        return ((current_value - initial_value) / initial_value) * 100
+    
+    def get_current_drawdown(self) -> Optional[float]:
+        """
+        Calcola il drawdown corrente dal peak più recente.
+        
+        Returns:
+            Drawdown percentuale (negativo) o None se dati insufficienti
+        """
+        # Cerca il peak negli ultimi 60 giorni
+        start_date = (datetime.strptime(self.date, '%Y-%m-%d') - timedelta(days=60)).strftime('%Y-%m-%d')
+        
+        query = """
+            SELECT MAX(total_value) as peak_value FROM portfolio_snapshots
+            WHERE portfolio_name = %s AND date BETWEEN %s AND %s
+        """
+        result, _ = database.execute_query(query, (self.name, start_date, self.date))
+        if not result or not result[0][0]:
+            return None
+        
+        peak_value = float(result[0][0])
+        current_value = self.get_total_value()
+        
+        if peak_value == 0:
+            return None
+        
+        drawdown = ((current_value - peak_value) / peak_value) * 100
+        return min(drawdown, 0)  # Drawdown è sempre <= 0
+    
+    def get_max_drawdown(self, days: int = config.DRAWDOWN_CALCULATION_DAYS) -> Optional[float]:
+        """
+        Calcola il massimo drawdown in un periodo.
+        
+        Args:
+            days: Giorni di lookback (default: 252 = 1 anno)
+            
+        Returns:
+            Max drawdown percentuale o None se dati insufficienti
+        """
+        start_date = (datetime.strptime(self.date, '%Y-%m-%d') - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        query = """
+            SELECT date, total_value FROM portfolio_snapshots
+            WHERE portfolio_name = %s AND date BETWEEN %s AND %s
+            ORDER BY date
+        """
+        result, _ = database.execute_query(query, (self.name, start_date, self.date))
+        if len(result) < 2:
+            return None
+        
+        values = [float(row[1]) for row in result]
+        max_dd = 0
+        peak = values[0]
+        
+        for value in values[1:]:
+            if value > peak:
+                peak = value
+            else:
+                dd = (value - peak) / peak * 100
+                max_dd = min(max_dd, dd)
+        
+        return max_dd
+    
+    def get_portfolio_volatility(self, days: int = config.VOLATILITY_CALCULATION_DAYS) -> Optional[float]:
+        """
+        Calcola la volatilità del portfolio (standard deviation dei daily returns).
+        
+        Args:
+            days: Giorni di lookback (default: 30)
+            
+        Returns:
+            Volatilità annualizzata percentuale o None se dati insufficienti
+        """
+        start_date = (datetime.strptime(self.date, '%Y-%m-%d') - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        query = """
+            SELECT total_value FROM portfolio_snapshots
+            WHERE portfolio_name = %s AND date BETWEEN %s AND %s
+            ORDER BY date
+        """
+        result, _ = database.execute_query(query, (self.name, start_date, self.date))
+        if len(result) < 2:
+            return None
+        
+        values = [float(row[0]) for row in result]
+        daily_returns = []
+        
+        for i in range(1, len(values)):
+            daily_return = (values[i] - values[i-1]) / values[i-1]
+            daily_returns.append(daily_return)
+        
+        if len(daily_returns) < 2:
+            return None
+        
+        daily_vol = stdev(daily_returns)
+        annualized_vol = daily_vol * (252 ** 0.5) * 100  # Annualizza e converti in %
+        
+        return annualized_vol
+    
+    def get_sharpe_ratio(self, risk_free_rate: float = config.DEFAULT_RISK_FREE_RATE) -> Optional[float]:
+        """
+        Calcola il Sharpe ratio del portfolio.
+        
+        Args:
+            risk_free_rate: Tasso risk-free annuale (default: 2%)
+            
+        Returns:
+            Sharpe ratio o None se dati insufficienti
+        """
+        annual_return = self.get_total_return_pct()
+        volatility = self.get_portfolio_volatility()
+        
+        if annual_return is None or volatility is None or volatility == 0:
+            return None
+        
+        # Converti annual return in decimal per il calcolo
+        excess_return = (annual_return / 100) - risk_free_rate
+        return excess_return / (volatility / 100)
+    
+    def get_win_rate(self, days: int = config.VOLATILITY_CALCULATION_DAYS) -> Optional[float]:
+        """
+        Calcola la percentuale di giorni con return positivo.
+        
+        Args:
+            days: Giorni di lookback (default: 30)
+            
+        Returns:
+            Win rate percentuale o None se dati insufficienti
+        """
+        start_date = (datetime.strptime(self.date, '%Y-%m-%d') - timedelta(days=days)).strftime('%Y-%m-%d')
+        
+        query = """
+            SELECT total_value FROM portfolio_snapshots
+            WHERE portfolio_name = %s AND date BETWEEN %s AND %s
+            ORDER BY date
+        """
+        result, _ = database.execute_query(query, (self.name, start_date, self.date))
+        if len(result) < 2:
+            return None
+        
+        values = [float(row[0]) for row in result]
+        positive_days = 0
+        total_days = 0
+        
+        for i in range(1, len(values)):
+            daily_return = (values[i] - values[i-1]) / values[i-1]
+            if daily_return > 0:
+                positive_days += 1
+            total_days += 1
+        
+        if total_days == 0:
+            return None
+        
+        return (positive_days / total_days) * 100
+    
+    # =============================
+    # PORTFOLIO HEALTH
+    # =============================
+    
+    def get_largest_position_pct(self) -> float:
+        """Ritorna la percentuale del portfolio della posizione più grande."""
+        if not self._positions:
+            return 0.0
+        
+        total_value = self.get_total_value()
+        if total_value == 0:
+            return 0.0
+        
+        largest_value = max(pos.get_current_value() for pos in self._positions.values() if pos.shares > 0)
+        return (largest_value / total_value) * 100
+    
+    def get_cash_utilization(self) -> float:
+        """Ritorna la percentuale di capitale investito (vs cash)."""
+        total_value = self.get_total_value()
+        cash_balance = self.get_cash_balance()
+        
+        if total_value == 0:
+            return 0.0
+        
+        return ((total_value - cash_balance) / total_value) * 100
+    
+    def get_winning_positions(self) -> List['Position']:
+        """Ritorna lista delle posizioni in profitto."""
+        return [pos for pos in self._positions.values() 
+                if pos.shares > 0 and pos.get_unrealized_pnl_pct() > 0]
+    
+    def get_losing_positions(self) -> List['Position']:
+        """Ritorna lista delle posizioni in perdita."""
+        return [pos for pos in self._positions.values() 
+                if pos.shares > 0 and pos.get_unrealized_pnl_pct() < 0]
+    
+    def get_capital_at_risk(self) -> Dict[str, float]:
+        """
+        Calcola il capitale totalmente a rischio nel portfolio.
+        
+        Returns:
+            Dict con 'total_risk' e dettaglio per posizione
+        """
+        risk_breakdown = {}
+        total_risk = 0.0
+        
+        for ticker, position in self._positions.items():
+            if position.shares > 0 and position.stop_loss:
+                risk = position.get_capital_at_risk()
+                risk_breakdown[ticker] = risk
+                total_risk += risk
+        
+        return {
+            'total_risk': total_risk,
+            'positions': risk_breakdown
         }
     
-    return snapshots
-
-
-# ================================
-# 5. AGGIORNAMENTO (da implementare)
-# ================================
-
-def update_portfolio(date: str, portfolio_name: str = "default") -> None:
-    """Aggiorna portfolio con prezzi correnti (da implementare)"""
-    # TODO: implementare aggiornamento completo
-    print(f"TODO: Aggiornamento portfolio '{portfolio_name}' per {date}")
-
-
-# ================================
-# 6. HELPER FUNCTIONS
-# ================================
-
-def _get_current_prices(tickers: List[str], date: str) -> Dict[str, float]:
-    """Ottiene prezzi correnti dal DB universe"""
-    prices = {}
-    for ticker in tickers:
+    def get_total_risk_pct(self) -> float:
+        """Ritorna il rischio totale come percentuale del portfolio."""
+        total_value = self.get_total_value()
+        if total_value == 0:
+            return 0.0
+        
+        capital_at_risk = self.get_capital_at_risk()
+        return (capital_at_risk['total_risk'] / total_value) * 100
+    
+    def is_risk_limit_exceeded(self) -> bool:
+        """Controlla se il rischio totale supera il limite configurato."""
+        return self.get_total_risk_pct() > config.MAX_PORTFOLIO_RISK_PCT
+    
+    # =============================
+    # INTERNAL METHODS
+    # =============================
+    
+    def _get_latest_date(self, portfolio_name: str) -> Optional[str]:
+        """Trova l'ultima data disponibile per un portfolio."""
+        query = """
+            SELECT MAX(date) FROM portfolio_snapshots 
+            WHERE portfolio_name = %s
+        """
+        result, _ = database.execute_query(query, (portfolio_name,))
+        if result and result[0][0]:
+            return result[0][0].strftime('%Y-%m-%d')
+        return None
+    
+    def _load_from_db(self) -> None:
+        """Carica snapshot e posizioni dal database."""
+        # Load snapshot
+        snapshot_query = """
+            SELECT total_value, cash_balance, positions_count,
+                   daily_return_pct, portfolio_volatility, current_drawdown_pct
+            FROM portfolio_snapshots
+            WHERE date = %s AND portfolio_name = %s
+        """
+        result, _ = database.execute_query(snapshot_query, (self.date, self.name))
+        if result:
+            row = result[0]
+            self._snapshot = {
+                'total_value': float(row[0]),
+                'cash_balance': float(row[1]),
+                'positions_count': row[2],
+                'daily_return_pct': float(row[3]) if row[3] else 0.0,
+                'portfolio_volatility': float(row[4]) if row[4] else 0.0,
+                'current_drawdown_pct': float(row[5]) if row[5] else 0.0
+            }
+        
+        # Load positions
+        positions_query = """
+            SELECT ticker, shares, avg_cost, current_price, 
+                   stop_loss, first_target, breakeven, first_half_sold
+            FROM portfolio_positions
+            WHERE date = %s AND portfolio_name = %s
+        """
+        result, _ = database.execute_query(positions_query, (self.date, self.name))
+        for row in result:
+            ticker = row[0]
+            self._positions[ticker] = Position(
+                ticker=ticker,
+                shares=int(row[1]),
+                avg_cost=float(row[2]),
+                current_price=float(row[3]),
+                stop_loss=float(row[4]) if row[4] else None,
+                first_target=float(row[5]) if row[5] else None,
+                breakeven=float(row[6]) if row[6] else None,
+                first_half_sold=bool(row[7]) if row[7] else False,
+                portfolio=self
+            )
+    
+    def _get_current_price(self, ticker: str) -> float:
+        """Ottiene il prezzo corrente dal DB universe."""
         query = """
             SELECT close FROM universe 
             WHERE ticker = %s AND date <= %s 
             ORDER BY date DESC LIMIT 1
         """
-        result = database.execute_query(query, (ticker, date))
+        result, _ = database.execute_query(query, (ticker, self.date))
         if not result:
-            raise ValueError(f"Prezzo non trovato per {ticker} alla data {date}")
-        prices[ticker] = float(result[0][0])
-    return prices
+            raise ValueError(f"Prezzo non trovato per {ticker} alla data {self.date}")
+        return float(result[0][0])
+    
+    def _update_snapshot(self) -> None:
+        """Ricalcola e salva lo snapshot del portfolio."""
+        cash = self.get_cash_balance()
+        positions_value = sum(pos.get_current_value() for pos in self._positions.values() if pos.shares > 0)
+        total_value = cash + positions_value
+        active_positions = self.get_positions_count()
+        
+        self._snapshot = {
+            'total_value': total_value,
+            'cash_balance': cash,
+            'positions_count': active_positions,
+            'daily_return_pct': 0.0  # Da calcolare se necessario
+        }
+        
+        # Salva nel DB
+        query = """
+            INSERT INTO portfolio_snapshots
+            (date, portfolio_name, total_value, cash_balance, positions_count, daily_return_pct)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (date, portfolio_name)
+            DO UPDATE SET
+                total_value = EXCLUDED.total_value,
+                cash_balance = EXCLUDED.cash_balance,
+                positions_count = EXCLUDED.positions_count,
+                daily_return_pct = EXCLUDED.daily_return_pct
+        """
+        params = (self.date, self.name, total_value, cash, active_positions, 0.0)
+        database.execute_query(query, params, fetch=False)
 
 
-def _insert_position(date: str, portfolio_name: str, pos_data: Dict) -> None:
-    """Inserisce singola posizione nel DB"""
-    query = """
-        INSERT INTO portfolio_positions 
-        (date, portfolio_name, ticker, shares, avg_cost, current_price, 
-         current_value, position_weight_pct, position_pnl_pct)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (date, portfolio_name, ticker) 
-        DO UPDATE SET
-            shares = EXCLUDED.shares,
-            avg_cost = EXCLUDED.avg_cost,
-            current_price = EXCLUDED.current_price,
-            current_value = EXCLUDED.current_value,
-            position_weight_pct = EXCLUDED.position_weight_pct,
-            position_pnl_pct = EXCLUDED.position_pnl_pct
+# ================================
+# 2. POSITION CLASS
+# ================================
+
+class Position:
     """
-    params = (
-        date, portfolio_name, pos_data['ticker'], pos_data['shares'],
-        pos_data['avg_cost'], pos_data['current_price'], pos_data['current_value'],
-        pos_data.get('position_weight_pct', 0), pos_data.get('position_pnl_pct', 0)
-    )
-    database.execute_query(query, params, fetch=False)
-
-
-def _insert_snapshot(date: str, portfolio_name: str, snapshot: Dict) -> None:
-    """Inserisce snapshot nel DB"""
-    query = """
-        INSERT INTO portfolio_snapshots
-        (date, portfolio_name, total_value, cash_balance, positions_count, daily_return_pct)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (date, portfolio_name)
-        DO UPDATE SET
-            total_value = EXCLUDED.total_value,
-            cash_balance = EXCLUDED.cash_balance,
-            positions_count = EXCLUDED.positions_count,
-            daily_return_pct = EXCLUDED.daily_return_pct
+    Rappresenta una singola posizione nel portfolio.
+    
+    Gestisce:
+    - Dati base (ticker, shares, avg_cost, current_price)
+    - Risk management (stop_loss, targets, 2-for-1 logic)
+    - Performance tracking (PnL, holding period)
+    
+    Attributes:
+        ticker (str): Symbol del titolo
+        shares (int): Numero di azioni possedute
+        avg_cost (float): Prezzo medio di carico
+        current_price (float): Prezzo corrente
+        stop_loss (float): Prezzo di stop loss
+        first_target (float): Primo target di profitto
+        breakeven (float): Prezzo di breakeven
+        first_half_sold (bool): Flag 2-for-1 strategy
+        portfolio (Portfolio): Riferimento al portfolio padre
     """
-    params = (
-        date, portfolio_name, snapshot['total_value'], snapshot['cash_balance'],
-        snapshot['positions_count'], snapshot['daily_return_pct']
-    )
-    database.execute_query(query, params, fetch=False)
-
-
-def _delete_portfolio_data(portfolio_name: str, date: str) -> None:
-    """Rimuove dati portfolio per una data specifica (per overwrite)"""
-    database.execute_query(
-        "DELETE FROM portfolio_positions WHERE portfolio_name = %s AND date = %s",
-        (portfolio_name, date), fetch=False
-    )
-    database.execute_query(
-        "DELETE FROM portfolio_snapshots WHERE portfolio_name = %s AND date = %s", 
-        (portfolio_name, date), fetch=False
-    )
+    
+    def __init__(self, ticker: str, shares: int, avg_cost: float, current_price: float,
+                 stop_loss: Optional[float] = None, first_target: Optional[float] = None,
+                 breakeven: Optional[float] = None, first_half_sold: bool = False,
+                 portfolio: Optional[Portfolio] = None):
+        """
+        Inizializza una posizione.
+        
+        Args:
+            ticker: Symbol del titolo
+            shares: Numero di azioni
+            avg_cost: Prezzo medio di carico
+            current_price: Prezzo corrente
+            stop_loss: Prezzo di stop loss (opzionale)
+            first_target: Primo target (opzionale)
+            breakeven: Prezzo breakeven (opzionale)
+            first_half_sold: Flag per 2-for-1 strategy
+            portfolio: Riferimento al portfolio padre
+        """
+        self.ticker = ticker
+        self.shares = shares
+        self.avg_cost = avg_cost
+        self.current_price = current_price
+        self.stop_loss = stop_loss
+        self.first_target = first_target
+        self.breakeven = breakeven
+        self.first_half_sold = first_half_sold
+        self.portfolio = portfolio
+    
+    # =============================
+    # RISK MANAGER METHODS
+    # =============================
+    
+    def is_stop_loss_hit(self, current_price: float) -> bool:
+        """
+        Controlla se il prezzo corrente ha raggiunto lo stop loss.
+        
+        Args:
+            current_price: Prezzo corrente del titolo
+            
+        Returns:
+            True se stop loss è stato raggiunto
+        """
+        if not self.stop_loss:
+            return False
+        return current_price <= self.stop_loss
+    
+    def is_first_target_hit(self, current_price: float) -> bool:
+        """
+        Controlla se il prezzo corrente ha raggiunto il primo target.
+        
+        Args:
+            current_price: Prezzo corrente del titolo
+            
+        Returns:
+            True se primo target è stato raggiunto
+        """
+        if not self.first_target or self.first_half_sold:
+            return False
+        return current_price >= self.first_target
+    
+    def is_breakeven_hit(self, current_price: float) -> bool:
+        """
+        Controlla se il prezzo corrente ha raggiunto il breakeven.
+        
+        Args:
+            current_price: Prezzo corrente del titolo
+            
+        Returns:
+            True se breakeven è stato raggiunto
+        """
+        if not self.breakeven:
+            return False
+        return current_price >= self.breakeven
+    
+    def calculate_2for1_targets(self, entry_price: float, atr: float) -> Dict[str, float]:
+        """
+        Calcola i target per la strategia 2-for-1.
+        
+        Args:
+            entry_price: Prezzo di entrata
+            atr: Average True Range per calcolo distanze
+            
+        Returns:
+            Dict con stop_loss, first_target, breakeven
+        """
+        risk_distance = atr * config.DEFAULT_ATR_MULTIPLIER
+        profit_distance = risk_distance * config.DEFAULT_PROFIT_RATIO
+        
+        targets = {
+            'stop_loss': entry_price - risk_distance,
+            'first_target': entry_price + profit_distance,
+            'breakeven': entry_price
+        }
+        
+        logger.info(f"Calcolati target 2-for-1 per {self.ticker}: {targets}")
+        return targets
+    
+    def update_targets(self, **kwargs) -> None:
+        """
+        Aggiorna i target della posizione.
+        
+        Args:
+            **kwargs: stop_loss, first_target, breakeven, first_half_sold
+        """
+        for key, value in kwargs.items():
+            if hasattr(self, key):
+                setattr(self, key, value)
+        
+        self._save_to_db()
+        logger.info(f"Target aggiornati per {self.ticker}: {kwargs}")
+    
+    # =============================
+    # PERFORMANCE METHODS
+    # =============================
+    
+    def get_unrealized_pnl_pct(self) -> float:
+        """Ritorna il PnL non realizzato come percentuale."""
+        if self.avg_cost == 0:
+            return 0.0
+        return ((self.current_price - self.avg_cost) / self.avg_cost) * 100
+    
+    def get_unrealized_pnl(self) -> float:
+        """Ritorna il PnL non realizzato in valore assoluto."""
+        return (self.current_price - self.avg_cost) * self.shares
+    
+    def get_current_value(self) -> float:
+        """Ritorna il valore corrente della posizione."""
+        return self.current_price * self.shares
+    
+    def get_days_held(self) -> int:
+        """
+        Calcola i giorni di possesso della posizione.
+        
+        Returns:
+            Giorni dalla prima apparizione nel DB
+        """
+        if not self.portfolio:
+            return 0
+        
+        query = """
+            SELECT MIN(date) FROM portfolio_positions
+            WHERE portfolio_name = %s AND ticker = %s
+        """
+        result, _ = database.execute_query(query, (self.portfolio.name, self.ticker))
+        
+        if not result or not result[0][0]:
+            return 0
+        
+        first_date = result[0][0]
+        current_date = datetime.strptime(self.portfolio.date, '%Y-%m-%d').date()
+        
+        return (current_date - first_date).days
+    
+    def get_capital_at_risk(self) -> float:
+        """
+        Calcola il capitale a rischio per questa posizione.
+        
+        Returns:
+            Capitale a rischio (differenza tra valore corrente e stop loss)
+        """
+        if not self.stop_loss:
+            return 0.0
+        
+        current_value = self.get_current_value()
+        stop_value = self.stop_loss * self.shares
+        
+        return max(0, current_value - stop_value)
+    
+    def get_position_weight(self, total_portfolio_value: float) -> float:
+        """
+        Calcola il peso della posizione nel portfolio.
+        
+        Args:
+            total_portfolio_value: Valore totale del portfolio
+            
+        Returns:
+            Peso percentuale della posizione
+        """
+        if total_portfolio_value == 0:
+            return 0.0
+        return (self.get_current_value() / total_portfolio_value) * 100
+    
+    # =============================
+    # INTERNAL METHODS
+    # =============================
+    
+    def _save_to_db(self) -> None:
+        """Salva la posizione nel database."""
+        if not self.portfolio:
+            logger.warning(f"Impossibile salvare posizione {self.ticker}: portfolio non impostato")
+            return
+        
+        # Calcola metriche
+        current_value = self.get_current_value()
+        pnl_pct = self.get_unrealized_pnl_pct()
+        weight_pct = self.get_position_weight(self.portfolio.get_total_value())
+        
+        query = """
+            INSERT INTO portfolio_positions 
+            (date, portfolio_name, ticker, shares, avg_cost, current_price, 
+             current_value, stop_loss, first_target, breakeven, first_half_sold,
+             position_weight_pct, position_pnl_pct)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (date, portfolio_name, ticker) 
+            DO UPDATE SET
+                shares = EXCLUDED.shares,
+                avg_cost = EXCLUDED.avg_cost,
+                current_price = EXCLUDED.current_price,
+                current_value = EXCLUDED.current_value,
+                stop_loss = EXCLUDED.stop_loss,
+                first_target = EXCLUDED.first_target,
+                breakeven = EXCLUDED.breakeven,
+                first_half_sold = EXCLUDED.first_half_sold,
+                position_weight_pct = EXCLUDED.position_weight_pct,
+                position_pnl_pct = EXCLUDED.position_pnl_pct
+        """

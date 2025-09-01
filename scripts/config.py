@@ -128,13 +128,37 @@ LOG_LEVELS = {
     'reports': 'INFO'
 }
 
-# =============================================================================
-# RISK MANAGEMENT (Future)
-# =============================================================================
-# Placeholder for future risk management parameters
-MAX_POSITION_SIZE_PCT = 2.0  # 2% per position
-MAX_PORTFOLIO_RISK_PCT = 10.0  # 10% total portfolio risk
-STOP_LOSS_PCT = 5.0  # 5% stop loss
+# =========================
+# RISK MANAGEMENT
+# =========================
+DEFAULT_RISK_PCT_PER_TRADE = 2.0    # % of portfolio risked per single trade
+DEFAULT_MAX_POSITIONS = 5            # Maximum simultaneous positions  
+DEFAULT_ATR_MULTIPLIER = 2.0         # Stop loss distance in ATR units
+DEFAULT_CASH_BUFFER = 0.10           # Keep 10% cash buffer
+DEFAULT_PROFIT_RATIO = 2.0           # First target at 2x risk distance
+
+# Portfolio risk limits
+MAX_PORTFOLIO_RISK_PCT = 10.0        # Maximum total capital at risk
+MAX_SINGLE_POSITION_PCT = 20.0       # Maximum single position size
+MIN_CASH_RESERVE_PCT = 5.0           # Minimum cash reserve
+
+# =========================  
+# PERFORMANCE METRICS
+# =========================
+DEFAULT_RISK_FREE_RATE = 0.02       # For Sharpe ratio calculation
+VOLATILITY_CALCULATION_DAYS = 30     # Days for volatility calculation
+DRAWDOWN_CALCULATION_DAYS = 252      # Days for max drawdown
+
+# =========================
+# SIGNAL PROCESSING  
+# =========================
+VOLATILITY_PREFERENCE = "low"       # "low" or "high" for signal ranking
+EXECUTION_FREQUENCY = "weekly"       # "daily" or "weekly"
+
+# =========================
+# DATABASE
+# =========================
+DEFAULT_PORTFOLIO_NAME = "default"
 
 # =============================================================================
 # BACKTESTING (Future)
@@ -144,21 +168,6 @@ BACKTEST_START_DATE = "2023-01-01"
 BACKTEST_INITIAL_CAPITAL = 100000  # $100k
 BACKTEST_COMMISSION = 0.001  # 0.1% commission per trade
 
-# =============================================================================
-# ENVIRONMENT SETTINGS
-# =============================================================================
-# Override configurations based on environment
-ENVIRONMENT = os.getenv("MONEY_ENV", "production")
-
-if ENVIRONMENT == "development":
-    # Override for development
-    YFINANCE_DEFAULT_PERIOD = "5d"  # Less data for faster testing
-    LOG_LEVELS = {k: 'DEBUG' for k in LOG_LEVELS.keys()}
-    
-elif ENVIRONMENT == "testing":
-    # Override for testing  
-    YFINANCE_MAX_RETRIES = 1
-    YFINANCE_RETRY_DELAY = 0.1
 
 # =============================================================================
 # VALIDATION

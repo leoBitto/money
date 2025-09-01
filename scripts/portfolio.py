@@ -10,7 +10,6 @@ CLASSI PRINCIPALI:
 2. Position: Singola posizione con risk management e performance tracking
 
 FUNZIONI MODULO:
-- create_portfolio_tables(): Inizializzazione tabelle DB
 - create_new_portfolio(): Factory per nuovi portfolio
 - get_portfolio_names(): Lista portfolio disponibili
 
@@ -39,6 +38,13 @@ from . import config
 # Setup logging
 logger = logging.getLogger(__name__)
 
+
+def get_portfolio_names():
+    query = """
+    select distinct portfolio_name
+    from portfolio_snapshots
+    """
+    return database.execute_query(query, fetch=True, with_columns=False)
 
 def create_new_portfolio(name: str, initial_cash: float = 10000.0, date: Optional[str] = None):
     """

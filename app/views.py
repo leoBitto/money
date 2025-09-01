@@ -51,7 +51,6 @@ def run_script():
         rows = get_data_for_db_between_dates(tickers, start_date, end_date)
         inserted = insert_batch_universe(rows, conflict_resolution="DO NOTHING")
 
-        flash(f"Script eseguito correttamente ✅ ({inserted} righe inserite)", "success")
         logger.info(f"Script eseguito correttamente: {inserted} righe inserite")
     except Exception as e:
         flash(f"Errore durante l'esecuzione: {e}", "danger")

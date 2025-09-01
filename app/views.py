@@ -25,7 +25,7 @@ def run_script():
 
         # 1. Prendo i tickers da Google Sheets
         tickers = get_universe_tickers_from_gsheet()
-
+        flash(f"Tickers : {tickers}")
         # 2. Trunco la tabella universe
         execute_query("TRUNCATE TABLE universe RESTART IDENTITY CASCADE", fetch=False)
 

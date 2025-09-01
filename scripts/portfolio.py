@@ -186,9 +186,10 @@ class Portfolio:
             logger.info(f"Nuova posizione {ticker}: {shares} shares @ €{avg_cost:.2f}")
         
         # Salva nel DB
-        position._save_to_db()
-        self._update_snapshot()
         
+        self._update_snapshot()
+        position._save_to_db()
+
         return position
     
     def update_position_targets(self, ticker: str, targets: Dict) -> None:
@@ -788,7 +789,12 @@ class Position:
         # Calcola metriche
         current_value = self.get_current_value()
         pnl_pct = self.get_unrealized_pnl_pct()
-        weight_pct = self.get_position_weight(self.portfolio.get_total_value())
+        
+        # Ricalcola direttamente il total_value (cash + posizioni correnti)
+        total_value = self.portfolio.get_cash_balance() + sum(
+            pos.get_current_value() for pos in self.portfolio._positions.values()
+        )
+        weight_pct = self.get_position_weight(total_value)
         
         query = """
             INSERT INTO portfolio_positions 

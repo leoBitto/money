@@ -116,8 +116,8 @@ def _normalize_yf_dataframe(df: pd.DataFrame, tickers: List[str]) -> pd.DataFram
     # Normalizza nomi colonne
     df.columns = [c.lower() for c in df.columns]
 
-    # Assicura colonna date
-    df = df.reset_index().rename(columns={"index": "date"})
+    df = df.reset_index()
+    df.rename(columns={df.columns[0]: "date"}, inplace=True)
     df["date"] = pd.to_datetime(df["date"])
 
     return df[["date", "ticker", "open", "high", "low", "close", "volume"]]

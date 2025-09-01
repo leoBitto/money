@@ -32,8 +32,16 @@
 
 <style>
   /* Loader */
-  #loader { display: none; transition: opacity 0.3s ease; }
-
+  #loader {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    height: 0;      /* inizialmente nascosto */
+    overflow: hidden;
+  }
+  #loader.htmx-request {
+    opacity: 1;
+    height: auto;
+  }
   /* Fade-in risultati */
   #results { opacity: 0; transition: opacity 0.5s ease; }
   #results.htmx-request { opacity: 0.3; }

@@ -2,10 +2,10 @@
 import logging
 import os
 from scripts import config
-from scripts.google_services import get_gsheet_client
+from scripts.google_services import get_universe_tickers_from_gsheet
 from scripts.data_fetcher import get_daily_data_for_db
 from scripts.database import insert_batch_universe
-
+import pandas as pd
 # Assicura che la cartella logs/ esista
 os.makedirs("logs", exist_ok=True)
 
@@ -21,9 +21,7 @@ def main():
 
     try:
         # 1. Ottieni tickers dallo Sheet
-        client = get_gsheet_client()
-        sheet = client.open_by_key(config.UNIVERSE_SPREADSHEET_ID).sheet1
-        tickers = sheet.col_values(1)[1:]  # salta intestazione
+        tickers = get_universe_tickers_from_gsheet()
         logging.info(f"Trovati {len(tickers)} ticker dallo sheet")
 
         if not tickers:

@@ -50,6 +50,7 @@ import json
 import gspread
 from google.cloud import secretmanager
 from google.oauth2.service_account import Credentials
+import pandas as pd
 
 from . import config
 
@@ -92,5 +93,6 @@ def get_universe_tickers_from_gsheet() -> list[str]:
     """
     client = get_gsheet_client()
     sheet = client.open_by_key(config.UNIVERSE_SPREADSHEET_ID).sheet1
-    tickers = sheet.col_values(4)  # assumiamo colonna A
-    return [t.strip().upper() for t in tickers if t.strip()]
+    data = sheet.get_all_values()
+    df = pd.DataFrame(data[1:], columns=data[0])
+    return df['Ticker'].dropna().str.strip().str.upper().tolist()

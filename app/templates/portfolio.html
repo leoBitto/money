@@ -16,21 +16,139 @@
     </form>
 
     {% if portfolio_data %}
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white">
-            <h2 class="h5 mb-0">Dashboard Portfolio: {{ portfolio_data.name }}</h2>
+    <div class="row g-4 mb-4">
+        <!-- Cash -->
+        <div class="col-md-3 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-wallet me-1"></i> Cash
+                    </h6>
+                    <h4 class="fw-bold text-primary">€{{ portfolio_data.cash }}</h4>
+                </div>
+            </div>
         </div>
-        <div class="card-body">
-            <ul class="list-group list-group-flush">
-                <li class="list-group-item"><strong>Data:</strong> {{ portfolio_data.date }}</li>
-                <li class="list-group-item"><strong>Cash disponibile:</strong> €{{ portfolio_data.cash }}</li>
-                <li class="list-group-item"><strong>Valore totale:</strong> €{{ portfolio_data.total_value }}</li>
-                <li class="list-group-item"><strong>Numero posizioni:</strong> {{ portfolio_data.positions_count }}</li>
-                <li class="list-group-item"><strong>Rischio totale:</strong> {{ portfolio_data.total_risk_pct }}%</li>
-                <li class="list-group-item"><strong>Posizione più grande:</strong> {{ portfolio_data.largest_position_pct }}%</li>
-            </ul>
+    
+        <!-- Valore Totale -->
+        <div class="col-md-3 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-piggy-bank me-1"></i> Valore
+                    </h6>
+                    <h4 class="fw-bold">€{{ portfolio_data.total_value }}</h4>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Posizioni -->
+        <div class="col-md-2 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-list me-1"></i> Posizioni
+                    </h6>
+                    <h4 class="fw-bold">{{ portfolio_data.positions_count }}</h4>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Rischio -->
+        <div class="col-md-2 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-exclamation-triangle me-1"></i> Rischio
+                    </h6>
+                    <h4 class="fw-bold {% if portfolio_data.total_risk_pct > 5 %}text-danger{% else %}text-success{% endif %}">
+                        {{ portfolio_data.total_risk_pct }}%
+                    </h4>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Drawdown -->
+        <div class="col-md-2 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-arrow-down me-1"></i> Drawdown
+                    </h6>
+                    <h4 class="fw-bold text-danger">{{ portfolio_data.current_drawdown }}%</h4>
+                    <small class="text-muted">Max: {{ portfolio_data.max_drawdown }}%</small>
+                </div>
+            </div>
         </div>
     </div>
+    
+    <div class="row g-4 mb-4">
+        <!-- Sharpe -->
+        <div class="col-md-2 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-balance-scale me-1"></i> Sharpe
+                    </h6>
+                    <h4 class="fw-bold {% if portfolio_data.sharpe_ratio > 1 %}text-success{% else %}text-warning{% endif %}">
+                        {{ portfolio_data.sharpe_ratio }}
+                    </h4>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Volatilità -->
+        <div class="col-md-2 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-random me-1"></i> Volatilità
+                    </h6>
+                    <h4 class="fw-bold">{{ portfolio_data.portfolio_volatility }}%</h4>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Win Rate -->
+        <div class="col-md-2 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-trophy me-1"></i> Win Rate
+                    </h6>
+                    <h4 class="fw-bold {% if portfolio_data.win_rate >= 50 %}text-success{% else %}text-danger{% endif %}">
+                        {{ portfolio_data.win_rate }}%
+                    </h4>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Largest Position -->
+        <div class="col-md-2 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-chart-pie me-1"></i> Largest
+                    </h6>
+                    <h4 class="fw-bold">{{ portfolio_data.largest_position_pct }}%</h4>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Return -->
+        <div class="col-md-2 col-6">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-body text-center">
+                    <h6 class="text-muted mb-2">
+                        <i class="fas fa-chart-line me-1"></i> Return
+                    </h6>
+                    <h4 class="fw-bold {% if portfolio_data.total_return_pct >= 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ portfolio_data.total_return_pct }}%
+                    </h4>
+                </div>
+            </div>
+        </div>
+    </div>
+    
 
     <h3>Posizioni</h3>
     <table class="table table-striped table-hover">

@@ -2,6 +2,18 @@
 
 Un sistema automatizzato per la generazione di segnali di trading basato su analisi tecnica, con aggiornamento automatico dei dati e report settimanali.
 
+## 📊 Status
+
+![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
+![Python](https://img.shields.io/badge/python-3.10+-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Last Commit](https://img.shields.io/github/last-commit/leoBitto/money)
+
+**Ultimo aggiornamento**: 26 Agosto 2025  
+**Versione**: 1.0.0  
+**Ticker monitorati**: 33  
+**Strategie attive**: 3
+
 ## 🎯 Panoramica
 
 **Money** è una pipeline finanziaria completa che:
@@ -11,6 +23,8 @@ Un sistema automatizzato per la generazione di segnali di trading basato su anal
 - **Genera report settimanali** con segnali BUY/SELL/HOLD
 - **Gestisce tutto automaticamente** tramite systemd timers
 
+
+
 ### Architettura del Sistema
 
 ```mermaid
@@ -19,7 +33,7 @@ graph TD
     B --> C[Yahoo Finance<br/>Download OHLCV]
     C --> D[PostgreSQL<br/>Database]
     D --> E[Trading Strategies<br/>MA, RSI, Breakout]
-    E --> F[Weekly Report<br/>Venerdì 23:59]
+    E --> F[SIGNALS and RISK MANAGEMENT Report<br/>Venerdì 23:59]
     F --> G[Google Sheets<br/>Segnali Report]
     
     H[systemd timers] --> B
@@ -298,18 +312,6 @@ Questo progetto è rilasciato sotto licenza **MIT**.
 
 - **Issues**: Usa GitHub Issues per bug report e feature request
 - **Discussions**: GitHub Discussions per domande generali
-- **Wiki**: Documentazione dettagliata nella GitHub Wiki
 
 ---
 
-## 📊 Status
-
-![Build Status](https://img.shields.io/badge/build-passing-brightgreen)
-![Python](https://img.shields.io/badge/python-3.10+-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Last Commit](https://img.shields.io/github/last-commit/username/money)
-
-**Ultimo aggiornamento**: 26 Agosto 2025  
-**Versione**: 1.0.0  
-**Ticker monitorati**: 33  
-**Strategie attive**: 3

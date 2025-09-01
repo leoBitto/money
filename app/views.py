@@ -85,6 +85,13 @@ def portfolio():
             "total_value": p.get_total_value(),
             "positions_count": p.get_positions_count(),
             "total_risk_pct": p.get_total_risk_pct(),
+            "total_return_pct": p.get_total_return_pct(),
+            "current_drawdown": p.get_current_drawdown(),
+            "max_drawdown": p.get_max_drawdown(),
+            "portfolio_volatility": p.get_portfolio_volatility(),
+            "sharpe_ratio": p.get_sharpe_ratio(),
+            "win_rate": p.get_win_rate(),
+            "total_risk_pct": p.get_total_risk_pct(),
             "largest_position_pct": p.get_largest_position_pct(),
         }
         positions_data = [

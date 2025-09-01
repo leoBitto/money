@@ -795,7 +795,8 @@ class Position:
             pos.get_current_value() for pos in self.portfolio._positions.values()
         )
         weight_pct = self.get_position_weight(total_value)
-        
+        logger.info(f"[DEBUG] INSERT posizione {self.ticker}: shares={self.shares}, value={current_value}, pnl%={pnl_pct}")
+
         query = """
             INSERT INTO portfolio_positions 
             (date, portfolio_name, ticker, shares, avg_cost, current_price, 
@@ -815,3 +816,20 @@ class Position:
                 position_weight_pct = EXCLUDED.position_weight_pct,
                 position_pnl_pct = EXCLUDED.position_pnl_pct
         """
+        params = (
+            self.portfolio.date,
+            self.portfolio.name,
+            self.ticker,
+            self.shares,
+            self.avg_cost,
+            self.current_price,
+            current_value,
+            self.stop_loss,
+            self.first_target,
+            self.breakeven,
+            self.first_half_sold,
+            weight_pct,
+            pnl_pct,
+        )
+
+        database.execute_query(query, params, fetch=False)

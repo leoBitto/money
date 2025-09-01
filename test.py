@@ -2,7 +2,8 @@
 import logging
 from datetime import datetime
 
-from scripts.portfolio import Portfolio, create_portfolio_tables, create_new_portfolio
+from scripts.portfolio import Portfolio, create_new_portfolio
+from scripts.database import create_portfolio_tables
 
 logging.basicConfig(level=logging.INFO)
 

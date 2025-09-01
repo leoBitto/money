@@ -6,3 +6,4 @@ from . import signals
 from . import reports
 from . import strategies
 from . import backtest
+from . import portfolio

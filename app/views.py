@@ -1,9 +1,9 @@
 from flask import Blueprint, render_template, request
 from flask_login import login_required
 from datetime import datetime
-from scripts import database as db
-from scripts import google_services as gcp
-from scripts import data_fetcher as dfetch
+from scripts.database import insert_batch_universe, execute_query
+from scripts.google_services import get_universe_tickers_from_gsheet
+from scripts.data_fetcher import get_data_for_db_between_dates
 
 
 views_bp = Blueprint("views", __name__)
@@ -24,16 +24,16 @@ def run_script():
             return redirect(url_for("views.welcome"))
 
         # 1. Prendo i tickers da Google Sheets
-        tickers = gcp.get_universe_tickers_from_gsheet()
+        tickers = get_universe_tickers_from_gsheet()
 
         # 2. Trunco la tabella universe
-        database.execute_query("TRUNCATE TABLE universe RESTART IDENTITY CASCADE", fetch=False)
+        execute_query("TRUNCATE TABLE universe RESTART IDENTITY CASCADE", fetch=False)
 
         # 3. Scarico i dati da yfinance
-        rows = dfetch.get_data_for_db_between_dates(tickers, start_date, end_date)
+        rows = get_data_for_db_between_dates(tickers, start_date, end_date)
 
         # 4. Inserisco i dati nel DB
-        inserted = db.insert_batch_universe(rows, conflict_resolution="DO NOTHING")
+        inserted = insert_batch_universe(rows, conflict_resolution="DO NOTHING")
 
         flash(f"Script eseguito correttamente ✅ ({inserted} righe inserite)", "success")
     except Exception as e:
@@ -70,7 +70,7 @@ def run_query():
         error = "⚠️ Nessuna query inviata"
     else:
         try:
-            fetched, column_names = db.execute_query(query)
+            fetched, column_names = execute_query(query)
             if fetched:
                 columns = column_names  # qui metti i nomi reali
                 results = fetched

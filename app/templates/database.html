@@ -5,7 +5,7 @@
 <h2>💾 Database</h2>
 
 <!-- Form grande con HTMX -->
-<form hx-post="{{ url_for('views.run_query') }}" hx-target="#results" hx-swap="innerHTML" hx-indicator="#loader">
+<form hx-post="{{ url_for('views.run_query') }}" hx-target="#results" hx-swap="innerHTML">
   <div class="mb-2">
     <textarea name="query" class="form-control" rows="20" style="font-family: monospace; font-size: 1rem;" placeholder="Scrivi la query SQL qui..."></textarea>
   </div>
@@ -14,89 +14,44 @@
   </button>
 </form>
 
-<!-- Loader -->
-<div id="loader" class="text-center my-3" style="display:none;">
-  <i class="fa-solid fa-spinner fa-spin" style="font-size:28px; color:#007bff;"></i>
-  <div>Caricamento in corso...</div>
-</div>
-
-<!-- Input filtro -->
-<div class="mt-2 mb-2">
-  <input type="text" id="tableFilter" class="form-control" placeholder="Filtra i risultati...">
-</div>
-
 <!-- Risultati -->
 <div id="results" class="mt-3">
   <!-- HTMX caricherà qui i risultati -->
 </div>
 
+<!-- Stile base tabella -->
 <style>
-  /* Loader */
-  #loader {
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    height: 0;      /* inizialmente nascosto */
-    overflow: hidden;
+  #results table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 600px;
+    margin-top: 10px;
   }
-  #loader.htmx-request {
-    opacity: 1;
-    height: auto;
+  #results th, #results td {
+    padding: 10px;
+    border: 1px solid #ddd;
+    text-align: left;
   }
-  /* Fade-in risultati */
-  #results { opacity: 0; transition: opacity 0.5s ease; }
-  #results.htmx-request { opacity: 0.3; }
-  #results.htmx-on-load { opacity: 1; }
-
-  /* Tabella scrollable */
-  #results-wrapper { max-height: 500px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; }
-  #results table { width: 100%; border-collapse: collapse; min-width: 600px; }
-  #results th, #results td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
-  #results th { background-color: #007bff; color: white; position: sticky; top: 0; z-index: 2; cursor: pointer; }
-  #results tr:nth-child(even) { background-color: #f9f9f9; }
-  #results tr:hover { background-color: #e0f0ff; }
+  #results th {
+    background-color: #007bff;
+    color: white;
+  }
+  #results tr:nth-child(even) {
+    background-color: #f9f9f9;
+  }
+  #results tr:hover {
+    background-color: #e0f0ff;
+  }
 
   /* Messaggi alert */
-  .alert { padding: 10px 15px; border-radius: 5px; margin-bottom: 10px; font-weight: 500; }
+  .alert {
+    padding: 10px 15px;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    font-weight: 500;
+  }
   .alert-success { background-color: #d4edda; color: #155724; }
   .alert-danger { background-color: #f8d7da; color: #721c24; }
 </style>
 
-<script>
-  // Fade-in risultati
-  document.body.addEventListener('htmx:afterSwap', (e) => {
-    if(e.target.id === 'results') e.target.style.opacity = 1;
-  });
-
-  // Ordinamento colonne cliccando header
-  function sortTable(table, colIndex) {
-    let rows = Array.from(table.tBodies[0].rows);
-    let asc = table.dataset.sortAsc === "true" ? false : true;
-    rows.sort((a, b) => {
-      let aText = a.cells[colIndex].innerText.toLowerCase();
-      let bText = b.cells[colIndex].innerText.toLowerCase();
-      return asc ? aText.localeCompare(bText) : bText.localeCompare(aText);
-    });
-    rows.forEach(row => table.tBodies[0].appendChild(row));
-    table.dataset.sortAsc = asc;
-  }
-
-  document.body.addEventListener('click', (e) => {
-    if(e.target.tagName === 'TH') {
-      let table = e.target.closest('table');
-      if(table) sortTable(table, e.target.cellIndex);
-    }
-  });
-
-  // Filtro live lato client
-  const filterInput = document.getElementById('tableFilter');
-  filterInput.addEventListener('input', () => {
-    const filter = filterInput.value.toLowerCase();
-    const table = document.querySelector('#results table');
-    if(!table) return;
-    Array.from(table.tBodies[0].rows).forEach(row => {
-      const rowText = row.innerText.toLowerCase();
-      row.style.display = rowText.includes(filter) ? '' : 'none';
-    });
-  });
-</script>
 {% endblock %}

@@ -4,7 +4,7 @@ from datetime import datetime
 from scripts.database import insert_batch_universe, execute_query
 from scripts.google_services import get_universe_tickers_from_gsheet
 from scripts.data_fetcher import get_data_for_db_between_dates
-from scripts.portfolio import Portfolio, Position, get_portfolio_names
+from scripts.portfolio import Portfolio, Position
 
 views_bp = Blueprint("views", __name__)
 

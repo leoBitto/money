@@ -137,27 +137,28 @@ def _generate_all_report_data(risk_manager: RiskManager) -> Dict[str, Any]:
     
     # 3. Strategy Signals & Orders
     strategy_funcs = get_all_strategies()
+    logger.info(f"📊 Generazione dati del report...")
     strategy_signals = {}
     strategy_orders = {}
     
-    for strategy_fn in strategy_funcs:
-        logger.info(f"🔄 Processando strategia: {strategy_fn.__name__}")
+    for strategy_name, strategy_fn in strategy_funcs.items():
+        logger.info(f"🔄 Processando strategia: {strategy_name}")
         
         try:
             # Genera segnali (qui passiamo la funzione, non la stringa)
             signals_df = risk_manager.generate_signals(strategy_fn)
-            strategy_signals[strategy_fn.__name__] = signals_df
+            strategy_signals[strategy_name] = signals_df
 
             # Valida segnali
             if not signals_df.empty:
                 validated_orders = risk_manager.validate_signals(signals_df)
-                strategy_orders[strategy_fn.__name__] = validated_orders
+                strategy_orders[strategy_name] = validated_orders
             else:
-                strategy_orders[strategy_fn.__name__] = []
+                strategy_orders[strategy_name] = []
         except Exception as e:
-            logger.error(f"Errore nella strategia {strategy_fn.__name__}: {e}")
-            strategy_signals[strategy_fn.__name__] = pd.DataFrame()
-            strategy_orders[strategy_fn.__name__] = []
+            logger.error(f"Errore nella strategia {strategy_name}: {e}")
+            strategy_signals[strategy_name] = pd.DataFrame()
+            strategy_orders[strategy_name] = []
 
     # 4. Execution Summary
     execution_summary = _generate_execution_summary(strategy_signals, strategy_orders, risk_manager)

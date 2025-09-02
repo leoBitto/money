@@ -23,7 +23,7 @@ CONFIG UTILIZZATI:
 - DEFAULT_STRATEGY_PARAMS: Parametri per ogni strategia
 - Portfolio "demo" come default
 """
-
+import inspect
 import logging
 import pandas as pd
 from datetime import datetime, timedelta
@@ -35,11 +35,23 @@ from . import config
 from .google_services import get_gsheet_client
 from .risk_manager import RiskManager
 from .portfolio import Portfolio
-
+import strategies 
 
 
 logger = logging.getLogger(__name__)
 
+
+def get_all_strategies() -> dict[str, callable]:
+    """
+    Ritorna un dizionario {nome_strategia: funzione} 
+    con tutte le strategie definite in strategies.py
+    """
+    strategy_funcs = {}
+    for name, func in inspect.getmembers(strategies, inspect.isfunction):
+        # qui puoi filtrare se servono solo certe funzioni
+        if not name.startswith("_"):  # ignora private
+            strategy_funcs[name] = func
+    return strategy_funcs
 
 def _previous_business_day(tz_name: str = "Europe/Rome") -> str:
     today = datetime.now(ZoneInfo(tz_name)).date()
@@ -125,24 +137,29 @@ def _generate_all_report_data(risk_manager: RiskManager) -> Dict[str, Any]:
     active_positions = _generate_active_positions(risk_manager)
     
     # 3. Strategy Signals & Orders
-    strategy_names = ['moving_average_crossover', 'rsi_strategy', 'breakout_strategy']
+    strategy_funcs = get_all_strategies()
     strategy_signals = {}
     strategy_orders = {}
     
     for strategy_name in strategy_names:
         logger.info(f"🔄 Processando strategia: {strategy_name}")
         
-        # Genera segnali
-        signals_df = risk_manager.generate_signals(strategy_name)
-        strategy_signals[strategy_name] = signals_df
-        
-        # Valida segnali
-        if not signals_df.empty:
-            validated_orders = risk_manager.validate_signals(signals_df)
-            strategy_orders[strategy_name] = validated_orders
-        else:
+        try:
+            # Genera segnali (qui passiamo la funzione, non la stringa)
+            signals_df = risk_manager.generate_signals(strategy_fn)
+            strategy_signals[strategy_name] = signals_df
+
+            # Valida segnali
+            if not signals_df.empty:
+                validated_orders = risk_manager.validate_signals(signals_df)
+                strategy_orders[strategy_name] = validated_orders
+            else:
+                strategy_orders[strategy_name] = []
+        except Exception as e:
+            logger.error(f"Errore nella strategia {strategy_name}: {e}")
+            strategy_signals[strategy_name] = pd.DataFrame()
             strategy_orders[strategy_name] = []
-    
+            
     # 4. Execution Summary
     execution_summary = _generate_execution_summary(strategy_signals, strategy_orders, risk_manager)
     

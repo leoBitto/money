@@ -86,97 +86,57 @@ class RiskManager:
     # 1. GENERAZIONE SEGNALI
     # ================================
     
-    def generate_signals(self, 
-                        strategy_name: str,
-                        lookback_days: int = 30,
-                        **strategy_params) -> pd.DataFrame:
+   def generate_signals(
+        self,
+        strategy_fn: callable,
+        lookback_days: int = 30,
+        **strategy_params
+    ) -> pd.DataFrame:
         """
         Genera segnali usando una strategia specifica.
-        
+
         Args:
-            strategy_name: Nome strategia ("moving_average_crossover", "rsi_strategy", "breakout_strategy")
+            strategy_fn: funzione strategia (es: rsi_strategy, moving_average_crossover)
             lookback_days: Giorni di dati storici per calcolo
             **strategy_params: Parametri specifici strategia
-            
+
         Returns:
             DataFrame con columns: ticker, signal, price, atr, volume
         """
-        # Map nome strategia a funzione
-        strategy_map = {
-            'moving_average_crossover': moving_average_crossover,
-            'rsi_strategy': rsi_strategy,
-            'breakout_strategy': breakout_strategy
-        }
-        
-        strategy_fn = strategy_map.get(strategy_name)
-        if not strategy_fn:
-            raise ValueError(f"Strategia '{strategy_name}' non riconosciuta")
-        
+        strategy_name = strategy_fn.__name__
+
         # Se nessun parametro passato, usa defaults da config
         if not strategy_params:
             strategy_params = config.DEFAULT_STRATEGY_PARAMS.get(strategy_name, {})
-        
+
         logger.info(f"Generando segnali con strategia '{strategy_name}' per {self.date}")
         logger.info(f"  Parametri: {strategy_params}")
-        
+
         # Ottieni dati universe per il periodo
         end_date = self.date
-        start_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
-        
+        start_date = (
+            datetime.strptime(end_date, "%Y-%m-%d") - timedelta(days=lookback_days)
+        ).strftime("%Y-%m-%d")
+
         universe_df = get_universe_data(start_date=start_date, end_date=end_date)
         if universe_df.empty:
             logger.warning("Nessun dato universe disponibile per il periodo")
             return pd.DataFrame()
-        
+
         # Genera segnali base (solo ticker + signal)
-        from .signals import generate_signals_df
         base_signals = generate_signals_df(strategy_fn, universe_df, **strategy_params)
-        
+
         # Enrichisci con dati di mercato
         enriched_signals = self._enrich_signals_with_market_data(base_signals)
-        
+
         logger.info(f"Generati {len(enriched_signals)} segnali:")
         for _, row in enriched_signals.iterrows():
-            logger.info(f"  {row['signal']} {row['ticker']} @ €{row['price']:.2f} (ATR: {row['atr']:.2f})")
-        
+            logger.info(
+                f"  {row['signal']} {row['ticker']} @ €{row['price']:.2f} (ATR: {row['atr']:.2f})"
+            )
+
         return enriched_signals
-    
-    
-    def _enrich_signals_with_market_data(self, base_signals: pd.DataFrame) -> pd.DataFrame:
-        """
-        Enrichisce segnali base con price, ATR, volume dal database.
-        
-        Args:
-            base_signals: DataFrame con ticker, signal
-            
-        Returns:
-            DataFrame enriched con price, atr, volume
-        """
-        enriched = []
-        
-        for _, row in base_signals.iterrows():
-            ticker = row['ticker']
-            signal = row['signal']
-            
-            # Skip HOLD signals per efficienza
-            if signal == 'HOLD':
-                continue
-            
-            # Ottieni dati di mercato per questo ticker
-            market_data = self._get_market_data_for_ticker(ticker)
-            if market_data:
-                enriched.append({
-                    'ticker': ticker,
-                    'signal': signal,
-                    'price': market_data['price'],
-                    'atr': market_data['atr'],
-                    'volume': market_data['volume']
-                })
-            else:
-                logger.warning(f"Dati di mercato mancanti per {ticker}, segnale ignorato")
-        
-        return pd.DataFrame(enriched)
-    
+
     
     def _get_market_data_for_ticker(self, ticker: str) -> Optional[Dict]:
         """

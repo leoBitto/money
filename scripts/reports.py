@@ -35,8 +35,7 @@ from . import config
 from .google_services import get_gsheet_client
 from .risk_manager import RiskManager
 from .portfolio import Portfolio
-import strategies 
-
+import scripts.strategies as strategies
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +158,7 @@ def _generate_all_report_data(risk_manager: RiskManager) -> Dict[str, Any]:
             logger.error(f"Errore nella strategia {strategy_name}: {e}")
             strategy_signals[strategy_name] = pd.DataFrame()
             strategy_orders[strategy_name] = []
-            
+
     # 4. Execution Summary
     execution_summary = _generate_execution_summary(strategy_signals, strategy_orders, risk_manager)
     

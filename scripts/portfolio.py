@@ -39,35 +39,6 @@ from . import config
 logger = logging.getLogger(__name__)
 
 
-def get_portfolio_names():
-    query = """
-    select distinct portfolio_name
-    from portfolio_snapshots
-    """
-    return database.execute_query(query, fetch=True, with_columns=False)
-
-def create_new_portfolio(name: str, initial_cash: float = 10000.0, date: Optional[str] = None):
-    """
-    Crea un nuovo portfolio nel DB con solo cash iniziale.
-    
-    Args:
-        name: Nome del portfolio
-        initial_cash: Cash iniziale
-        date: Data (default: oggi)
-    """
-    from datetime import datetime
-    date = date or datetime.today().strftime("%Y-%m-%d")
-
-    query = """
-        INSERT INTO portfolio_snapshots
-        (date, portfolio_name, total_value, cash_balance, positions_count, daily_return_pct)
-        VALUES (%s, %s, %s, %s, %s, %s)
-        ON CONFLICT (date, portfolio_name) DO NOTHING
-    """
-    params = (date, name, initial_cash, initial_cash, 0, 0.0)
-    database.execute_query(query, params, fetch=False)
-
-
 # ================================
 # 1. PORTFOLIO CLASS
 # ================================
@@ -108,6 +79,104 @@ class Portfolio:
         else:
             logger.warning(f"Portfolio '{name}' non trovato nel DB")
     
+
+    @classmethod
+    def get_or_create(cls, name: str, date: Optional[str] = None, 
+                      initial_cash: float = 10000.0) -> 'Portfolio':
+        """
+        Factory method per ottenere portfolio esistente o crearne uno nuovo.
+        
+        Args:
+            name: Nome del portfolio
+            date: Data specifica (default: ultima disponibile o oggi)
+            initial_cash: Cash iniziale se nuovo portfolio
+            
+        Returns:
+            Portfolio object (esistente o nuovo)
+            
+        Example:
+            >>> portfolio = Portfolio.get_or_create("demo", initial_cash=5000)
+            >>> portfolio.get_cash_balance()  # 5000.0 se nuovo, valore reale se esistente
+        """
+        # Prova a caricare portfolio esistente
+        existing_portfolio = cls(name, date)
+        
+        # Se esiste (ha almeno uno snapshot), ritornalo
+        if existing_portfolio._snapshot is not None:
+            logger.info(f"Portfolio '{name}' trovato per {existing_portfolio.date}")
+            return existing_portfolio
+        
+        # Altrimenti crea nuovo portfolio
+        create_date = date or datetime.now().strftime('%Y-%m-%d')
+        
+        logger.info(f"Creando nuovo portfolio '{name}' con cash iniziale €{initial_cash:,.2f}")
+        
+        # Crea snapshot iniziale nel DB
+        query = """
+            INSERT INTO portfolio_snapshots
+            (date, portfolio_name, total_value, cash_balance, positions_count, daily_return_pct)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (date, portfolio_name) DO NOTHING
+        """
+        params = (create_date, name, initial_cash, initial_cash, 0, 0.0)
+        database.execute_query(query, params, fetch=False)
+        
+        # Carica il nuovo portfolio
+        new_portfolio = cls(name, create_date)
+        
+        logger.info(f"Portfolio '{name}' creato con successo")
+        return new_portfolio
+    
+    @classmethod  
+    def list_available(cls) -> List[str]:
+        """
+        Lista tutti i portfolio disponibili nel database.
+        
+        Returns:
+            Lista dei nomi portfolio
+        """
+        query = """
+            SELECT DISTINCT portfolio_name 
+            FROM portfolio_snapshots 
+            ORDER BY portfolio_name
+        """
+        result, _ = database.execute_query(query)
+        return [row[0] for row in result]
+    
+    @classmethod
+    def delete_portfolio(cls, name: str) -> bool:
+        """
+        Elimina completamente un portfolio dal database.
+        
+        Args:
+            name: Nome del portfolio da eliminare
+            
+        Returns:
+            True se eliminato con successo
+        """
+        try:
+            # Elimina posizioni
+            delete_positions = """
+                DELETE FROM portfolio_positions 
+                WHERE portfolio_name = %s
+            """
+            database.execute_query(delete_positions, (name,), fetch=False)
+            
+            # Elimina snapshots
+            delete_snapshots = """
+                DELETE FROM portfolio_snapshots 
+                WHERE portfolio_name = %s
+            """
+            database.execute_query(delete_snapshots, (name,), fetch=False)
+            
+            logger.info(f"Portfolio '{name}' eliminato dal database")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Errore nell'eliminare portfolio '{name}': {e}")
+            return False
+
+
     # =============================
     # CORE METHODS (Risk Manager)
     # =============================
@@ -507,10 +576,11 @@ class Portfolio:
         
         # Load positions
         positions_query = """
-            SELECT ticker, shares, avg_cost, current_price, 
-                   stop_loss, first_target, breakeven, first_half_sold
-            FROM portfolio_positions
-            WHERE date = %s AND portfolio_name = %s
+        SELECT ticker, shares, avg_cost, current_price, 
+               stop_loss, first_target, breakeven, first_half_sold,
+               entry_atr
+        FROM portfolio_positions
+        WHERE date = %s AND portfolio_name = %s
         """
         result, _ = database.execute_query(positions_query, (self.date, self.name))
         for row in result:
@@ -524,6 +594,7 @@ class Portfolio:
                 first_target=float(row[5]) if row[5] else None,
                 breakeven=float(row[6]) if row[6] else None,
                 first_half_sold=bool(row[7]) if row[7] else False,
+                entry_atr=float(row[8]) if row[8] else None, 
                 portfolio=self
             )
     
@@ -786,23 +857,22 @@ class Position:
             logger.warning(f"Impossibile salvare posizione {self.ticker}: portfolio non impostato")
             return
         
-        # Calcola metriche
+        # Calcola metriche posizione
         current_value = self.get_current_value()
         pnl_pct = self.get_unrealized_pnl_pct()
         
-        # Ricalcola direttamente il total_value (cash + posizioni correnti)
-        total_value = self.portfolio.get_cash_balance() + sum(
-            pos.get_current_value() for pos in self.portfolio._positions.values()
-        )
+        # Usa valore cached del portfolio invece di ricalcolare
+        total_value = self.portfolio.get_total_value()
         weight_pct = self.get_position_weight(total_value)
-        logger.info(f"[DEBUG] INSERT posizione {self.ticker}: shares={self.shares}, value={current_value}, pnl%={pnl_pct}")
+        
+        logger.info(f"Salvando posizione {self.ticker}: {self.shares} shares @ €{self.current_price:.2f}")
 
         query = """
             INSERT INTO portfolio_positions 
             (date, portfolio_name, ticker, shares, avg_cost, current_price, 
-             current_value, stop_loss, first_target, breakeven, first_half_sold,
-             position_weight_pct, position_pnl_pct)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            current_value, stop_loss, first_target, breakeven, first_half_sold,
+            entry_atr, position_weight_pct, position_pnl_pct)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (date, portfolio_name, ticker) 
             DO UPDATE SET
                 shares = EXCLUDED.shares,
@@ -813,6 +883,7 @@ class Position:
                 first_target = EXCLUDED.first_target,
                 breakeven = EXCLUDED.breakeven,
                 first_half_sold = EXCLUDED.first_half_sold,
+                entry_atr = EXCLUDED.entry_atr,
                 position_weight_pct = EXCLUDED.position_weight_pct,
                 position_pnl_pct = EXCLUDED.position_pnl_pct
         """
@@ -828,6 +899,7 @@ class Position:
             self.first_target,
             self.breakeven,
             self.first_half_sold,
+            self.entry_atr,  
             weight_pct,
             pnl_pct,
         )

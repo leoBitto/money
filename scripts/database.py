@@ -133,6 +133,9 @@ def create_universe_table():
     execute_query(universe_query, fetch=False)
 
 def create_portfolio_tables():
+    """
+    Crea tabelle portfolio con schema aggiornato incluso entry_atr.
+    """
     snapshots_query = """
     CREATE TABLE IF NOT EXISTS portfolio_snapshots (
         date DATE NOT NULL,
@@ -156,8 +159,6 @@ def create_portfolio_tables():
     );
     """
 
-    
-
     positions_query = """
     CREATE TABLE IF NOT EXISTS portfolio_positions (
         date DATE NOT NULL,
@@ -170,11 +171,12 @@ def create_portfolio_tables():
         current_price DECIMAL(10,4) NOT NULL,
         current_value DECIMAL(12,2) NOT NULL,
 
-        -- Risk management
+        -- Risk management  
         stop_loss DECIMAL(10,4),
         first_target DECIMAL(10,4),
         breakeven DECIMAL(10,4),
-        first_half_sold BOOLEAN DEFAULT FALSE, 
+        first_half_sold BOOLEAN DEFAULT FALSE,
+        entry_atr DECIMAL(6,4),  
 
         -- Metriche posizione
         position_weight_pct DECIMAL(8,4),
@@ -199,7 +201,12 @@ def create_portfolio_tables():
         ON portfolio_positions(position_weight_pct DESC);
     """
 
-    # Esegui tutto
+    # Esegui creazione tabelle
     execute_query(snapshots_query, fetch=False)
     execute_query(positions_query, fetch=False)
     execute_query(indices_query, fetch=False)
+    
+    # Assicurati che entry_atr esista su DB esistenti
+    add_entry_atr_column()
+    
+    logger.info("Tabelle portfolio create/aggiornate con successo")

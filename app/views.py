@@ -50,7 +50,7 @@ def analytics():
 @login_required
 def portfolio():
     # Lista portfolio disponibili (da DB o configurazione)
-    portfolios = [row[0] for row in get_portfolio_names()]  # puoi sostituire con query DB
+    portfolios = Portfolio.list_available()  # puoi sostituire con query DB
     
     selected_portfolio = request.form.get("portfolio")  # ricevi il portfolio selezionato
     

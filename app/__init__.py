@@ -2,7 +2,7 @@
 from flask import Flask, request, redirect, url_for
 from flask_login import LoginManager, UserMixin, current_user
 from scripts import config
-from filters import register_filters
+from .filters import register_filters
 
 import logging
 import os

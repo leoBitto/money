@@ -86,12 +86,12 @@ class RiskManager:
     # 1. GENERAZIONE SEGNALI
     # ================================
     
-   def generate_signals(
-        self,
-        strategy_fn: callable,
-        lookback_days: int = 30,
-        **strategy_params
-    ) -> pd.DataFrame:
+    def generate_signals(
+            self,
+            strategy_fn: callable,
+            lookback_days: int = 30,
+            **strategy_params
+        ) -> pd.DataFrame:
         """
         Genera segnali usando una strategia specifica.
 

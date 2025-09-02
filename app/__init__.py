@@ -1,6 +1,7 @@
 from flask import Flask, request, redirect, url_for
 from flask_login import LoginManager, UserMixin, current_user
 from scripts import config
+from filters import register_filters
 
 login_manager = LoginManager()
 
@@ -37,5 +38,7 @@ def create_app():
     
     app.register_blueprint(auth_bp)
     app.register_blueprint(views_bp)
+
+    register_filters(app)
 
     return app

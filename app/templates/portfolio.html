@@ -89,9 +89,17 @@
                     <h6 class="text-muted mb-2">
                         <i class="fas fa-balance-scale me-1"></i> Sharpe
                     </h6>
-                    <h4 class="fw-bold {% if portfolio_data.sharpe_ratio > 1 %}text-success{% else %}text-warning{% endif %}">
-                        {{ portfolio_data.sharpe_ratio }}
-                    </h4>
+                    <h4 class="fw-bold 
+                    {% if portfolio_data.sharpe_ratio is not none and portfolio_data.sharpe_ratio > 1 %}
+                        text-success
+                    {% elif portfolio_data.sharpe_ratio is not none %}
+                        text-warning
+                    {% else %}
+                        text-muted
+                    {% endif %}
+                ">
+                    {{ portfolio_data.sharpe_ratio if portfolio_data.sharpe_ratio is not none else "-" }}
+                </h4>
                 </div>
             </div>
         </div>

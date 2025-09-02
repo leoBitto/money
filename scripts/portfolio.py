@@ -537,6 +537,20 @@ class Portfolio:
     def is_risk_limit_exceeded(self) -> bool:
         """Controlla se il rischio totale supera il limite configurato."""
         return self.get_total_risk_pct() > config.MAX_PORTFOLIO_RISK_PCT
+
+    def get_available_cash(self, buffer_pct: float = config.DEFAULT_CASH_BUFFER * 100) -> float:
+        """
+        Ritorna cash disponibile considerando il buffer di sicurezza.
+        
+        Args:
+            buffer_pct: Percentuale buffer da mantenere (default: 10%)
+            
+        Returns:
+            Cash disponibile per nuovi investimenti
+        """
+        total_cash = self.get_cash_balance()
+        buffer_amount = total_cash * (buffer_pct / 100.0)
+        return max(0, total_cash - buffer_amount)
     
     # =============================
     # INTERNAL METHODS
@@ -667,7 +681,7 @@ class Position:
     
     def __init__(self, ticker: str, shares: int, avg_cost: float, current_price: float,
                  stop_loss: Optional[float] = None, first_target: Optional[float] = None,
-                 breakeven: Optional[float] = None, first_half_sold: bool = False,
+                 breakeven: Optional[float] = None, entry_atr: Optional[float] = None, first_half_sold: bool = False,
                  portfolio: Optional[Portfolio] = None):
         """
         Inizializza una posizione.
@@ -690,6 +704,7 @@ class Position:
         self.stop_loss = stop_loss
         self.first_target = first_target
         self.breakeven = breakeven
+        self.entry_atr = entry_atr
         self.first_half_sold = first_half_sold
         self.portfolio = portfolio
     

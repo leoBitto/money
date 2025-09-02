@@ -1,516 +1,609 @@
 # scripts/risk_manager.py
 """
-Modulo: risk_manager
-====================
+Modulo: risk_manager (Refactored + Signal Generation)
+=====================================================
 
-Sistema di gestione del rischio per trading sistematico con strategia 2-for-1.
+Sistema completo per generazione segnali + gestione rischio.
 
-FUNZIONALITÀ PRINCIPALI:
-1. Trasforma segnali grezzi (HOLD/BUY/SELL) in decisioni operative concrete
-2. Applica position sizing basato su rischio percentuale (2% default)
-3. Implementa strategia 2-for-1 per massimizzare profitti limitando perdite
-4. Gestisce priorità delle decisioni (SELL > BUY)
-5. Limita esposizione massima (5 posizioni simultanee default)
+RESPONSABILITÀ:
+1. Generare segnali trading dalle strategie
+2. Enrichire segnali con price/ATR da database  
+3. Validare ordini BUY contro limiti di rischio
+4. Calcolare position sizing basato su ATR e % rischio
+5. Eseguire controlli pre-trade
 
-LOGICA OPERATIVA:
-- SELL ha sempre priorità assoluta (protezione capitale)
-- BUY viene filtrato per disponibilità cash e volatilità
-- Stop loss fisso a 2x ATR sotto entry price  
-- First target a 2x rischio per vendita 50% posizione
-- Secondo target a breakeven per rimanente 50%
-
-DIPENDENZE:
-- portfolio.py per stato corrente e aggiornamenti
-- database.py per tracking operazioni
-- pandas per manipolazione dati
+FLUSSO OPERATIVO:
+signals -> enrich_with_market_data -> validate_orders -> execute_orders
 
 USO TIPICO:
->>> from scripts.risk_manager import process_signals
->>> refined_signals = process_signals(raw_signals, portfolio_name="demo")
->>> # Esegui gli ordini refinati...
+>>> from scripts.risk_manager import RiskManager
+>>> 
+>>> rm = RiskManager("demo", "2025-01-15")  # Supporta backtesting
+>>> signals = rm.generate_signals("moving_average_crossover")
+>>> approved_orders = rm.validate_signals(signals)
+>>> # Esegui ordini approvati...
 """
 
 import pandas as pd
+import logging
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime, timedelta
-import logging
 
-from . import portfolio
-from . import database
+from . import config
+from .portfolio import Portfolio, Position
+from .database import execute_query, get_universe_data
+from .signals import generate_signals_df
+from .strategies import moving_average_crossover, rsi_strategy, breakout_strategy
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ================================
-# 1. CONFIGURATION PARAMETERS
-# ================================
-
-# Risk management settings
-DEFAULT_RISK_PCT = 2.0          # Risk per trade as % of total portfolio
-DEFAULT_MAX_POSITIONS = 5       # Maximum simultaneous positions
-DEFAULT_ATR_MULTIPLIER = 2.0    # Stop loss distance in ATR units
-DEFAULT_CASH_BUFFER = 0.10      # Keep 10% cash buffer
-DEFAULT_PROFIT_RATIO = 2.0      # First target at 2x risk distance
-
-# Signal selection preferences  
-VOLATILITY_PREFERENCE = "low"   # "low" = conservative, "high" = aggressive
-
-
-# ================================
-# 2. MAIN SIGNAL PROCESSING
-# ================================
-
-def process_signals(raw_signals: List[Dict], 
-                   portfolio_name: str = "default",
-                   date: Optional[str] = None,
-                   risk_pct: float = DEFAULT_RISK_PCT,
-                   max_positions: int = DEFAULT_MAX_POSITIONS) -> List[Dict]:
+class RiskManager:
     """
-    Transform raw signals into executable orders with risk management applied.
+    Gestore completo segnali + rischio per un portfolio.
     
-    This is the main entry point for the risk manager. Takes simple HOLD/BUY/SELL
-    signals and outputs concrete orders with position sizing, stops, and targets.
+    Combina:
+    - Generazione segnali dalle strategie
+    - Enrichment con dati di mercato  
+    - Validazione contro limiti di rischio
+    - Position sizing automatico
     
-    Args:
-        raw_signals: List of signal dicts with keys: action, ticker, price, atr
-        portfolio_name: Name of portfolio to analyze
-        date: Date for analysis (default: today)
-        risk_pct: Risk percentage per trade (default: 2.0%)
-        max_positions: Maximum simultaneous positions (default: 5)
-        
-    Returns:
-        List of refined signal dicts with execution details
-        
-    Example:
-        >>> signals = [
-        ...     {"action": "BUY", "ticker": "AAPL", "price": 150.0, "atr": 3.5},
-        ...     {"action": "SELL", "ticker": "MSFT", "price": 310.0, "atr": 8.2}
-        ... ]
-        >>> refined = process_signals(signals, "demo")
-        >>> # Returns executable orders with stops/targets
+    Attributes:
+        portfolio (Portfolio): Portfolio da gestire
+        date (str): Data per analisi (supporta backtesting)
+        max_risk_pct (float): Rischio massimo % per trade
+        max_positions (int): Numero massimo posizioni
     """
-    if date is None:
-        date = datetime.now().strftime('%Y-%m-%d')
     
-    logger.info(f"Processing {len(raw_signals)} signals for portfolio '{portfolio_name}' on {date}")
+    def __init__(self, 
+                 portfolio_name: str,
+                 date: Optional[str] = None,
+                 max_risk_pct: float = config.DEFAULT_RISK_PCT_PER_TRADE,
+                 max_positions: int = config.DEFAULT_MAX_POSITIONS):
+        """
+        Inizializza risk manager con portfolio esistente o nuovo.
+        
+        Args:
+            portfolio_name: Nome del portfolio
+            date: Data per analisi (default: oggi, supporta backtesting)
+            max_risk_pct: Rischio massimo % per trade
+            max_positions: Numero massimo posizioni
+        """
+        self.date = date or datetime.now().strftime('%Y-%m-%d')
+        self.max_risk_pct = max_risk_pct
+        self.max_positions = max_positions
+        
+        # Carica o crea portfolio per la data specifica
+        self.portfolio = Portfolio.get_or_create(portfolio_name, self.date)
+        
+        logger.info(f"RiskManager inizializzato:")
+        logger.info(f"  Portfolio: {self.portfolio.name} @ {self.date}")
+        logger.info(f"  Cash: €{self.portfolio.get_cash_balance():,.2f}")
+        logger.info(f"  Posizioni: {self.portfolio.get_positions_count()}/{max_positions}")
+
+
+    # ================================
+    # 1. GENERAZIONE SEGNALI
+    # ================================
     
-    # Get current portfolio state
-    portfolio_state = get_portfolio_state(portfolio_name, date)
-    if not portfolio_state:
-        logger.error(f"Portfolio '{portfolio_name}' not found for date {date}")
-        return []
+    def generate_signals(self, 
+                        strategy_name: str,
+                        lookback_days: int = 30,
+                        **strategy_params) -> pd.DataFrame:
+        """
+        Genera segnali usando una strategia specifica.
+        
+        Args:
+            strategy_name: Nome strategia ("moving_average_crossover", "rsi_strategy", "breakout_strategy")
+            lookback_days: Giorni di dati storici per calcolo
+            **strategy_params: Parametri specifici strategia
+            
+        Returns:
+            DataFrame con columns: ticker, signal, price, atr, volume
+        """
+        # Map nome strategia a funzione
+        strategy_map = {
+            'moving_average_crossover': moving_average_crossover,
+            'rsi_strategy': rsi_strategy,
+            'breakout_strategy': breakout_strategy
+        }
+        
+        strategy_fn = strategy_map.get(strategy_name)
+        if not strategy_fn:
+            raise ValueError(f"Strategia '{strategy_name}' non riconosciuta")
+        
+        # Se nessun parametro passato, usa defaults da config
+        if not strategy_params:
+            strategy_params = config.DEFAULT_STRATEGY_PARAMS.get(strategy_name, {})
+        
+        logger.info(f"Generando segnali con strategia '{strategy_name}' per {self.date}")
+        logger.info(f"  Parametri: {strategy_params}")
+        
+        # Ottieni dati universe per il periodo
+        end_date = self.date
+        start_date = (datetime.strptime(end_date, '%Y-%m-%d') - timedelta(days=lookback_days)).strftime('%Y-%m-%d')
+        
+        universe_df = get_universe_data(start_date=start_date, end_date=end_date)
+        if universe_df.empty:
+            logger.warning("Nessun dato universe disponibile per il periodo")
+            return pd.DataFrame()
+        
+        # Genera segnali base (solo ticker + signal)
+        from .signals import generate_signals_df
+        base_signals = generate_signals_df(strategy_fn, universe_df, **strategy_params)
+        
+        # Enrichisci con dati di mercato
+        enriched_signals = self._enrich_signals_with_market_data(base_signals)
+        
+        logger.info(f"Generati {len(enriched_signals)} segnali:")
+        for _, row in enriched_signals.iterrows():
+            logger.info(f"  {row['signal']} {row['ticker']} @ €{row['price']:.2f} (ATR: {row['atr']:.2f})")
+        
+        return enriched_signals
     
-    refined_signals = []
     
-    # PRIORITY 1: Process SELL signals (capital protection)
-    sell_signals = [s for s in raw_signals if s['action'] == 'SELL']
-    hold_signals = [s for s in raw_signals if s['action'] == 'HOLD']
+    def _enrich_signals_with_market_data(self, base_signals: pd.DataFrame) -> pd.DataFrame:
+        """
+        Enrichisce segnali base con price, ATR, volume dal database.
+        
+        Args:
+            base_signals: DataFrame con ticker, signal
+            
+        Returns:
+            DataFrame enriched con price, atr, volume
+        """
+        enriched = []
+        
+        for _, row in base_signals.iterrows():
+            ticker = row['ticker']
+            signal = row['signal']
+            
+            # Skip HOLD signals per efficienza
+            if signal == 'HOLD':
+                continue
+            
+            # Ottieni dati di mercato per questo ticker
+            market_data = self._get_market_data_for_ticker(ticker)
+            if market_data:
+                enriched.append({
+                    'ticker': ticker,
+                    'signal': signal,
+                    'price': market_data['price'],
+                    'atr': market_data['atr'],
+                    'volume': market_data['volume']
+                })
+            else:
+                logger.warning(f"Dati di mercato mancanti per {ticker}, segnale ignorato")
+        
+        return pd.DataFrame(enriched)
     
-    # Check both explicit SELL signals and HOLD signals for existing positions
-    all_check_signals = sell_signals + hold_signals
     
-    for signal in all_check_signals:
+    def _get_market_data_for_ticker(self, ticker: str) -> Optional[Dict]:
+        """
+        Ottiene price, ATR, volume per un ticker alla data specifica.
+        
+        Args:
+            ticker: Symbol del titolo
+            
+        Returns:
+            Dict con price, atr, volume o None se dati mancanti
+        """
+        # Ottieni dati recenti per calcolo ATR (serve almeno 14 giorni)
+        lookback_date = (datetime.strptime(self.date, '%Y-%m-%d') - timedelta(days=20)).strftime('%Y-%m-%d')
+        
+        query = """
+            SELECT date, high, low, close, volume
+            FROM universe 
+            WHERE ticker = %s AND date BETWEEN %s AND %s
+            ORDER BY date DESC
+            LIMIT 20
+        """
+        
+        rows, cols = execute_query(query, (ticker, lookback_date, self.date))
+        if not rows:
+            return None
+        
+        # Converti in DataFrame per calcolo ATR
+        df = pd.DataFrame(rows, columns=cols)
+        df['date'] = pd.to_datetime(df['date'])
+        
+        # Prezzo corrente (ultimo close)
+        current_price = float(df.iloc[0]['close'])
+        current_volume = float(df.iloc[0]['volume']) if df.iloc[0]['volume'] else 0
+        
+        # Calcola ATR (Average True Range)
+        atr = self._calculate_atr(df)
+        
+        return {
+            'price': current_price,
+            'atr': atr,
+            'volume': current_volume
+        }
+    
+    
+    def _calculate_atr(self, df: pd.DataFrame, period: int = 14) -> float:
+        """
+        Calcola Average True Range per un DataFrame con OHLC.
+        
+        Args:
+            df: DataFrame con columns high, low, close
+            period: Periodo per media mobile ATR
+            
+        Returns:
+            ATR value
+        """
+        if len(df) < 2:
+            return 0.0
+        
+        df = df.sort_values('date').copy()
+        
+        # True Range = max(high-low, high-prev_close, prev_close-low)
+        df['prev_close'] = df['close'].shift(1)
+        df['tr1'] = df['high'] - df['low']
+        df['tr2'] = abs(df['high'] - df['prev_close'])
+        df['tr3'] = abs(df['low'] - df['prev_close'])
+        df['true_range'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
+        
+        # ATR = media mobile del True Range
+        atr = df['true_range'].tail(min(period, len(df))).mean()
+        
+        return float(atr) if pd.notna(atr) else 0.0
+
+
+    # ================================
+    # 2. VALIDAZIONE ORDINI
+    # ================================
+    
+    def validate_signals(self, signals_df: pd.DataFrame) -> List[Dict]:
+        """
+        Valida segnali e genera ordini eseguibili.
+        
+        Processo:
+        1. Filtra solo segnali BUY/SELL (HOLD ignorati)
+        2. Priorità SELL per posizioni esistenti
+        3. Valida BUY contro limiti rischio
+        4. Ritorna ordini approvati
+        
+        Args:
+            signals_df: DataFrame con ticker, signal, price, atr
+            
+        Returns:
+            Lista di ordini validati per esecuzione
+        """
+        if signals_df.empty:
+            logger.info("Nessun segnale da validare")
+            return []
+        
+        validated_orders = []
+        
+        # PRIORITÀ 1: Gestisci SELL signals per posizioni esistenti
+        sell_signals = signals_df[signals_df['signal'] == 'SELL']
+        for _, signal in sell_signals.iterrows():
+            sell_order = self._validate_sell_signal(signal)
+            if sell_order:
+                validated_orders.append(sell_order)
+        
+        # PRIORITÀ 2: Gestisci BUY signals per nuove posizioni
+        buy_signals = signals_df[signals_df['signal'] == 'BUY']
+        if not buy_signals.empty:
+            buy_orders = self._validate_buy_signals_batch(buy_signals)
+            validated_orders.extend(buy_orders)
+        
+        logger.info(f"Validazione completata: {len(validated_orders)} ordini approvati")
+        return validated_orders
+    
+    
+    def _validate_sell_signal(self, signal: pd.Series) -> Optional[Dict]:
+        """
+        Valida un segnale SELL per posizione esistente.
+        
+        Args:
+            signal: Serie con ticker, signal, price
+            
+        Returns:
+            Ordine SELL validato o None
+        """
         ticker = signal['ticker']
         current_price = signal['price']
         
-        if ticker in portfolio_state['positions']:
-            sell_orders = check_sell_conditions(
-                portfolio_state['positions'][ticker],
-                current_price,
-                signal['action']
-            )
-            refined_signals.extend(sell_orders)
-    
-    # PRIORITY 2: Process BUY signals (growth opportunities)  
-    buy_signals = [s for s in raw_signals if s['action'] == 'BUY']
-    if buy_signals:
-        buy_orders = process_buy_signals(
-            buy_signals,
-            portfolio_state,
-            risk_pct,
-            max_positions
-        )
-        refined_signals.extend(buy_orders)
-    
-    logger.info(f"Generated {len(refined_signals)} refined signals:")
-    for signal in refined_signals:
-        logger.info(f"  {signal['action']} {signal.get('shares', 0)} {signal['ticker']} @ {signal.get('price', 0):.2f}")
-    
-    return refined_signals
-
-
-def get_portfolio_state(portfolio_name: str, date: str) -> Optional[Dict]:
-    """
-    Get comprehensive portfolio state for risk analysis.
-    
-    Returns dict with keys:
-    - snapshot: portfolio totals and cash
-    - positions: dict of current positions keyed by ticker
-    """
-    # Get portfolio snapshot
-    snapshot = portfolio.get_portfolio_snapshot(date, portfolio_name)
-    if not snapshot:
-        return None
+        position = self.portfolio.get_position(ticker)
+        if not position or position.shares <= 0:
+            logger.info(f"SELL signal per {ticker} ignorato: posizione non trovata")
+            return None
         
-    # Get detailed positions
-    positions_df = portfolio.get_portfolio_positions(date, portfolio_name)
-    
-    # Convert positions to dict for easier access
-    positions_dict = {}
-    for _, row in positions_df.iterrows():
-        ticker = row['ticker']
-        positions_dict[ticker] = {
-            'ticker': ticker,
-            'shares': int(row['shares']),
-            'avg_cost': float(row['avg_cost']),
-            'current_price': float(row['current_price']),
-            'current_value': float(row['current_value']),
-            'stop_loss': float(row['stop_loss']) if pd.notna(row['stop_loss']) else None,
-            'first_target': float(row['first_target']) if pd.notna(row['first_target']) else None,
-            'breakeven': float(row['breakeven']) if pd.notna(row['breakeven']) else None,
-            'first_half_sold': bool(row['first_half_sold']) if pd.notna(row['first_half_sold']) else False,
-            'position_weight_pct': float(row['position_weight_pct']) if pd.notna(row['position_weight_pct']) else 0.0,
-            'position_pnl_pct': float(row['position_pnl_pct']) if pd.notna(row['position_pnl_pct']) else 0.0
-        }
-    
-    return {
-        'snapshot': snapshot,
-        'positions': positions_dict
-    }
-
-
-# ================================
-# 3. SELL SIGNAL PROCESSING (PRIORITY 1)
-# ================================
-
-def check_sell_conditions(position: Dict, 
-                         current_price: float,
-                         signal_action: str) -> List[Dict]:
-    """
-    Check all sell conditions for an existing position using 2-for-1 strategy.
-    
-    Sell triggers (in order of priority):
-    1. Stop loss hit -> sell all shares immediately
-    2. First target hit -> sell 50% + move stop to breakeven  
-    3. Breakeven hit (after first target) -> sell remaining 50%
-    4. Strategy SELL signal -> sell all (if not in 2-for-1 sequence)
-    
-    Args:
-        position: Position dict with current state
-        current_price: Current market price
-        signal_action: "SELL", "HOLD", or "BUY" from strategy
-        
-    Returns:
-        List of sell order dicts
-    """
-    sell_orders = []
-    
-    ticker = position['ticker']
-    shares = position['shares']
-    stop_loss = position['stop_loss']
-    first_target = position['first_target']
-    breakeven = position['breakeven']
-    first_half_sold = position['first_half_sold']
-    
-    # Skip if no shares (shouldn't happen)
-    if shares <= 0:
-        return []
-    
-    # 1. STOP LOSS HIT (highest priority)
-    if stop_loss and current_price <= stop_loss:
-        sell_orders.append({
+        # Per ora: vendi tutto quando strategia dice SELL
+        # TODO: Implementare logica 2-for-1 più sofisticata
+        return {
             'action': 'SELL',
             'ticker': ticker,
-            'shares': shares,
-            'price': current_price,
-            'reason': 'STOP_LOSS',
-            'priority': 1
-        })
-        logger.warning(f"STOP LOSS triggered for {ticker}: {current_price:.2f} <= {stop_loss:.2f}")
-        return sell_orders
-    
-    # 2. FIRST TARGET HIT (2-for-1 strategy activation)
-    if first_target and not first_half_sold and current_price >= first_target:
-        half_shares = shares // 2
-        if half_shares > 0:
-            sell_orders.append({
-                'action': 'SELL',
-                'ticker': ticker, 
-                'shares': half_shares,
-                'price': current_price,
-                'reason': 'FIRST_TARGET_2FOR1',
-                'priority': 2,
-                'update_position': {
-                    'first_half_sold': True,
-                    'stop_loss': position['avg_cost'],  # Move stop to breakeven
-                    'breakeven': position['avg_cost']
-                }
-            })
-            logger.info(f"FIRST TARGET hit for {ticker}: selling {half_shares} shares at {current_price:.2f}")
-        return sell_orders
-    
-    # 3. BREAKEVEN HIT (after first target sold)
-    if first_half_sold and breakeven and current_price <= breakeven:
-        remaining_shares = shares - (shares // 2)
-        if remaining_shares > 0:
-            sell_orders.append({
-                'action': 'SELL',
-                'ticker': ticker,
-                'shares': remaining_shares, 
-                'price': current_price,
-                'reason': 'BREAKEVEN_2FOR1',
-                'priority': 3
-            })
-            logger.info(f"BREAKEVEN hit for {ticker}: selling remaining {remaining_shares} shares at {current_price:.2f}")
-        return sell_orders
-    
-    # 4. STRATEGY SELL SIGNAL (if not in 2-for-1 sequence)
-    if signal_action == 'SELL' and not first_half_sold:
-        sell_orders.append({
-            'action': 'SELL',
-            'ticker': ticker,
-            'shares': shares,
+            'shares': position.shares,
             'price': current_price,
             'reason': 'STRATEGY_SIGNAL',
-            'priority': 4
-        })
-        logger.info(f"STRATEGY SELL signal for {ticker}: selling {shares} shares at {current_price:.2f}")
+            'position_value': position.shares * current_price
+        }
     
-    return sell_orders
+    
+    def _validate_buy_signals_batch(self, buy_signals: pd.DataFrame) -> List[Dict]:
+        """
+        Valida batch di segnali BUY con controlli rischio.
+        
+        Args:
+            buy_signals: DataFrame con ticker, signal, price, atr
+            
+        Returns:
+            Lista ordini BUY approvati
+        """
+        # Check posizioni disponibili
+        current_positions = self.portfolio.get_positions_count()
+        available_slots = self.max_positions - current_positions
+        
+        if available_slots <= 0:
+            logger.info(f"Nessuna posizione disponibile ({current_positions}/{self.max_positions})")
+            return []
+        
+        # Filtra ticker già posseduti
+        existing_tickers = {ticker for ticker, pos in self.portfolio._positions.items() if pos.shares > 0}
+        new_signals = buy_signals[~buy_signals['ticker'].isin(existing_tickers)]
+        
+        if new_signals.empty:
+            logger.info("Tutti i ticker BUY sono già posseduti")
+            return []
+        
+        # Ordina per conservatività (ATR più basso primo)
+        ranked_signals = new_signals.sort_values(['atr', 'ticker']).head(available_slots)
+        
+        # Valida ogni segnale
+        validated_orders = []
+        
+        for _, signal in ranked_signals.iterrows():
+            order = self._validate_buy_signal(signal)
+            if order and order['approved']:
+                validated_orders.append(order)
+                # Simula riduzione cash per prossimi ordini
+                # (implementazione semplificata)
+        
+        return validated_orders
+    
+    
+    def _validate_buy_signal(self, signal: pd.Series) -> Optional[Dict]:
+        """
+        Valida un singolo segnale BUY.
+        
+        Args:
+            signal: Serie con ticker, price, atr
+            
+        Returns:
+            Ordine BUY validato o None
+        """
+        ticker = signal['ticker']
+        entry_price = signal['price']
+        atr = signal['atr']
+        
+        logger.info(f"Validating BUY: {ticker} @ €{entry_price:.2f} (ATR: {atr:.2f})")
+        
+        # 1. Calcola position sizing
+        sizing = self._calculate_position_size(entry_price, atr)
+        if not sizing['valid']:
+            return {
+                'approved': False,
+                'ticker': ticker,
+                'reason': sizing['reason']
+            }
+        
+        shares = sizing['shares']
+        total_cost = sizing['total_cost']
+        targets = sizing['targets']
+        
+        # 2. Check cash disponibile
+        available_cash = self.portfolio.get_available_cash()
+        if total_cost > available_cash:
+            return {
+                'approved': False,
+                'ticker': ticker,
+                'reason': f'Cash insufficiente: serve €{total_cost:,.2f}, disponibile €{available_cash:,.2f}'
+            }
+        
+        # 3. Check concentrazione
+        total_value = self.portfolio.get_total_value()
+        position_weight = (total_cost / total_value) * 100 if total_value > 0 else 0
+        
+        if position_weight > config.MAX_SINGLE_POSITION_PCT:
+            return {
+                'approved': False,
+                'ticker': ticker,
+                'reason': f'Posizione troppo grande: {position_weight:.1f}% > {config.MAX_SINGLE_POSITION_PCT}%'
+            }
+        
+        # ORDINE APPROVATO
+        return {
+            'approved': True,
+            'action': 'BUY',
+            'ticker': ticker,
+            'shares': shares,
+            'price': entry_price,
+            'targets': targets,
+            'cost': total_cost,
+            'position_weight_pct': position_weight,
+            'reason': 'STRATEGY_SIGNAL'
+        }
+    
+    
+    def _calculate_position_size(self, entry_price: float, atr: float) -> Dict:
+        """
+        Calcola position size basata su rischio % del portfolio.
+        
+        Args:
+            entry_price: Prezzo di entrata
+            atr: Average True Range
+            
+        Returns:
+            Dict con shares, total_cost, targets, valid, reason
+        """
+        total_value = self.portfolio.get_total_value()
+        if total_value <= 0:
+            return {'valid': False, 'reason': 'Portfolio value zero'}
+        
+        # Risk-based sizing
+        risk_amount = total_value * (self.max_risk_pct / 100.0)
+        risk_distance = atr * config.DEFAULT_ATR_MULTIPLIER
+        
+        if risk_distance <= 0:
+            return {'valid': False, 'reason': f'ATR troppo basso: {atr}'}
+        
+        shares = int(risk_amount / risk_distance)
+        if shares <= 0:
+            return {'valid': False, 'reason': 'Position size troppo piccola'}
+        
+        total_cost = shares * entry_price
+        targets = self._calculate_2for1_targets(entry_price, atr)
+        
+        return {
+            'valid': True,
+            'shares': shares,
+            'total_cost': total_cost,
+            'targets': targets,
+            'risk_amount': risk_amount
+        }
+    
+    
+    def _calculate_2for1_targets(self, entry_price: float, atr: float) -> Dict:
+        """Calcola target per strategia 2-for-1."""
+        risk_distance = atr * config.DEFAULT_ATR_MULTIPLIER
+        profit_distance = risk_distance * config.DEFAULT_PROFIT_RATIO
+        
+        return {
+            'stop_loss': round(entry_price - risk_distance, 4),
+            'first_target': round(entry_price + profit_distance, 4),
+            'breakeven': round(entry_price, 4),
+            'entry_atr': round(atr, 4)
+        }
+
+
+    # ================================
+    # 3. EXECUTION HELPERS
+    # ================================
+    
+    def execute_approved_orders(self, approved_orders: List[Dict]) -> Dict:
+        """
+        Esegue ordini approvati aggiornando il portfolio.
+        
+        Args:
+            approved_orders: Lista ordini validati
+            
+        Returns:
+            Dict con summary esecuzione
+        """
+        executed = []
+        errors = []
+        
+        for order in approved_orders:
+            try:
+                if order['action'] == 'BUY':
+                    position = self.portfolio.add_position(
+                        ticker=order['ticker'],
+                        shares=order['shares'],
+                        avg_cost=order['price'],
+                        current_price=order['price']
+                    )
+                    
+                    # Imposta target 2-for-1
+                    targets = order.get('targets', {})
+                    if targets:
+                        position.stop_loss = targets.get('stop_loss')
+                        position.first_target = targets.get('first_target')
+                        position.breakeven = targets.get('breakeven')
+                        position.entry_atr = targets.get('entry_atr')
+                        position._save_to_db()
+                    
+                    executed.append(f"BUY {order['shares']} {order['ticker']} @ €{order['price']:.2f}")
+                    
+                elif order['action'] == 'SELL':
+                    # TODO: Implementare vendita posizione
+                    # Per ora log dell'operazione
+                    executed.append(f"SELL {order['shares']} {order['ticker']} @ €{order['price']:.2f}")
+                
+            except Exception as e:
+                error_msg = f"Errore esecuzione {order['action']} {order['ticker']}: {e}"
+                errors.append(error_msg)
+                logger.error(error_msg)
+        
+        return {
+            'executed': executed,
+            'errors': errors,
+            'total_executed': len(executed),
+            'total_errors': len(errors)
+        }
 
 
 # ================================
-# 4. BUY SIGNAL PROCESSING (PRIORITY 2)  
+# 4. CONVENIENCE FUNCTIONS
 # ================================
 
-def process_buy_signals(buy_signals: List[Dict],
-                       portfolio_state: Dict,
-                       risk_pct: float,
-                       max_positions: int) -> List[Dict]:
+def run_full_trading_cycle(portfolio_name: str,
+                          strategy_name: str = "moving_average_crossover",
+                          date: Optional[str] = None,
+                          execute: bool = False,
+                          **strategy_params) -> Dict:
     """
-    Process BUY signals with position sizing and selection logic.
-    
-    Steps:
-    1. Filter signals for available positions slots
-    2. Rank signals by conservativeness (low volatility first)
-    3. Calculate position sizes based on risk percentage
-    4. Generate orders with stop loss and profit targets
+    Esegue ciclo completo: genera segnali -> valida -> esegue.
     
     Args:
-        buy_signals: List of BUY signal dicts
-        portfolio_state: Current portfolio state
-        risk_pct: Risk percentage per trade
-        max_positions: Maximum simultaneous positions
+        portfolio_name: Nome portfolio
+        strategy_name: Nome strategia da usare
+        date: Data per analisi (supporta backtesting)
+        execute: Se True esegue ordini, altrimenti solo simulazione
+        **strategy_params: Parametri strategia
         
     Returns:
-        List of BUY order dicts with position sizing and targets
+        Dict con summary completo del ciclo
     """
-    # Check available position slots
-    current_positions = len([p for p in portfolio_state['positions'].values() if p['shares'] > 0])
-    available_slots = max_positions - current_positions
+    logger.info(f"=== TRADING CYCLE START ===")
+    logger.info(f"Portfolio: {portfolio_name}, Strategy: {strategy_name}, Date: {date}")
     
-    if available_slots <= 0:
-        logger.info(f"No available position slots (current: {current_positions}/{max_positions})")
-        return []
+    # 1. Setup
+    rm = RiskManager(portfolio_name, date)
     
-    logger.info(f"Available position slots: {available_slots}/{max_positions}")
+    # 2. Genera segnali
+    signals = rm.generate_signals(strategy_name, **strategy_params)
     
-    # Filter out tickers we already own
-    existing_tickers = set(portfolio_state['positions'].keys())
-    new_buy_signals = [s for s in buy_signals if s['ticker'] not in existing_tickers]
+    # 3. Valida segnali
+    approved_orders = rm.validate_signals(signals)
     
-    if not new_buy_signals:
-        logger.info("No new BUY signals (all tickers already owned)")
-        return []
+    # 4. Esegui se richiesto
+    execution_result = {}
+    if execute and approved_orders:
+        execution_result = rm.execute_approved_orders(approved_orders)
     
-    # Rank signals by conservativeness (lower volatility = lower risk)
-    ranked_signals = rank_buy_signals_by_conservativeness(new_buy_signals)
-    
-    # Select best signals within available slots
-    selected_signals = ranked_signals[:available_slots]
-    logger.info(f"Selected {len(selected_signals)} BUY signals from {len(new_buy_signals)} candidates")
-    
-    # Calculate position sizes and generate orders
-    buy_orders = []
-    total_portfolio_value = portfolio_state['snapshot']['total_value']
-    available_cash = portfolio_state['snapshot']['cash_balance']
-    
-    for signal in selected_signals:
-        order = calculate_buy_order(
-            signal,
-            total_portfolio_value,
-            available_cash,
-            risk_pct
-        )
-        
-        if order:
-            buy_orders.append(order)
-            # Reduce available cash for next calculation
-            available_cash -= order['shares'] * order['price']
-            logger.info(f"Generated BUY order: {order['shares']} {order['ticker']} @ {order['price']:.2f}")
-        else:
-            logger.warning(f"Could not generate BUY order for {signal['ticker']} (insufficient funds)")
-    
-    return buy_orders
-
-
-def rank_buy_signals_by_conservativeness(buy_signals: List[Dict]) -> List[Dict]:
-    """
-    Rank BUY signals by conservativeness (lower volatility = more conservative).
-    
-    Conservative approach prioritizes:
-    1. Lower ATR (lower volatility)
-    2. Alphabetical order as tiebreaker (consistent selection)
-    
-    Args:
-        buy_signals: List of BUY signal dicts with 'atr' values
-        
-    Returns:
-        Sorted list with most conservative signals first
-    """
-    if VOLATILITY_PREFERENCE == "low":
-        # Sort by ATR ascending (lower volatility first), then alphabetically
-        ranked = sorted(buy_signals, key=lambda x: (x['atr'], x['ticker']))
-        logger.info(f"Ranked signals by conservativeness (low volatility first):")
-        for i, signal in enumerate(ranked[:5]):  # Show top 5
-            logger.info(f"  {i+1}. {signal['ticker']} (ATR: {signal['atr']:.2f})")
-    else:
-        # Alternative: high volatility first (more aggressive)
-        ranked = sorted(buy_signals, key=lambda x: (-x['atr'], x['ticker']))
-        logger.info(f"Ranked signals by aggressiveness (high volatility first):")
-    
-    return ranked
-
-
-def calculate_buy_order(signal: Dict,
-                       total_portfolio_value: float,
-                       available_cash: float, 
-                       risk_pct: float) -> Optional[Dict]:
-    """
-    Calculate position size and targets for a BUY order using 2% risk rule.
-    
-    Position sizing logic:
-    - Risk amount = total_portfolio_value * risk_pct%
-    - Stop loss distance = 2 * ATR  
-    - Shares = risk_amount / stop_loss_distance
-    - Verify we have enough cash for the purchase
-    
-    Args:
-        signal: BUY signal dict with ticker, price, atr
-        total_portfolio_value: Total portfolio value for risk calculation
-        available_cash: Cash available for purchases
-        risk_pct: Risk percentage per trade
-        
-    Returns:
-        BUY order dict with position sizing and targets, or None if insufficient funds
-    """
-    ticker = signal['ticker']
-    entry_price = signal['price']
-    atr = signal['atr']
-    
-    # Calculate risk-based position size
-    risk_amount = total_portfolio_value * (risk_pct / 100.0)
-    stop_loss_distance = DEFAULT_ATR_MULTIPLIER * atr
-    stop_loss_price = entry_price - stop_loss_distance
-    
-    # Position size based on risk
-    if stop_loss_distance <= 0:
-        logger.error(f"Invalid stop loss distance for {ticker}: {stop_loss_distance}")
-        return None
-        
-    shares = int(risk_amount / stop_loss_distance)
-    
-    if shares <= 0:
-        logger.warning(f"Position size too small for {ticker}: {shares} shares")
-        return None
-    
-    # Check if we can afford it (with cash buffer)
-    total_cost = shares * entry_price
-    max_allowed_cost = available_cash * (1 - DEFAULT_CASH_BUFFER)
-    
-    if total_cost > max_allowed_cost:
-        logger.warning(f"Insufficient funds for {ticker}: need €{total_cost:,.2f}, have €{max_allowed_cost:,.2f}")
-        return None
-    
-    # Calculate 2-for-1 targets
-    targets = calculate_2for1_targets(entry_price, atr)
-    
-    return {
-        'action': 'BUY',
-        'ticker': ticker,
-        'shares': shares,
-        'price': entry_price,
-        'reason': 'STRATEGY_SIGNAL',
-        'priority': 5,
-        'risk_amount': risk_amount,
-        'total_cost': total_cost,
-        'targets': targets
+    # 5. Summary
+    result = {
+        'portfolio_name': portfolio_name,
+        'date': rm.date,
+        'strategy': strategy_name,
+        'signals_generated': len(signals),
+        'orders_approved': len(approved_orders),
+        'approved_orders': approved_orders,
+        'execution_result': execution_result,
+        'portfolio_summary': {
+            'cash': rm.portfolio.get_cash_balance(),
+            'total_value': rm.portfolio.get_total_value(),
+            'positions': rm.portfolio.get_positions_count()
+        }
     }
+    
+    logger.info(f"=== TRADING CYCLE END ===")
+    logger.info(f"Segnali: {result['signals_generated']}, Ordini: {result['orders_approved']}")
+    
+    return result
 
 
-def calculate_2for1_targets(entry_price: float, atr: float) -> Dict[str, float]:
+def quick_signal_check(portfolio_name: str,
+                      strategy_name: str = "moving_average_crossover",
+                      date: Optional[str] = None) -> pd.DataFrame:
     """
-    Calculate stop loss and profit targets for 2-for-1 strategy.
+    Quick check per vedere segnali senza validazione rischio.
     
-    2-for-1 strategy setup:
-    - Stop loss: entry_price - (2 * ATR) 
-    - Risk per share: entry_price - stop_loss
-    - First target: entry_price + (2 * risk_per_share)  [sell 50%]
-    - Breakeven: entry_price  [stop for remaining 50% after first target]
-    
-    Args:
-        entry_price: Entry price for the position
-        atr: Average True Range for volatility measure
-        
     Returns:
-        Dict with stop_loss, first_target, breakeven, risk_per_share
+        DataFrame con segnali enriched
     """
-    stop_loss = entry_price - (DEFAULT_ATR_MULTIPLIER * atr)
-    risk_per_share = entry_price - stop_loss
-    first_target = entry_price + (DEFAULT_PROFIT_RATIO * risk_per_share)
-    
-    return {
-        'stop_loss': round(stop_loss, 4),
-        'first_target': round(first_target, 4),
-        'breakeven': round(entry_price, 4),
-        'risk_per_share': round(risk_per_share, 4)
-    }
-
-
-
-def validate_signal_format(signal: Dict) -> bool:
-    """
-    Validate that a signal has required fields and valid values.
-    
-    Required fields: action, ticker, price, atr
-    Valid actions: HOLD, BUY, SELL
-    
-    Args:
-        signal: Signal dict to validate
-        
-    Returns:
-        True if valid, False otherwise
-    """
-    required_fields = ['action', 'ticker', 'price', 'atr']
-    
-    # Check required fields exist
-    for field in required_fields:
-        if field not in signal:
-            logger.error(f"Missing required field '{field}' in signal: {signal}")
-            return False
-    
-    # Check action is valid
-    if signal['action'] not in ['HOLD', 'BUY', 'SELL']:
-        logger.error(f"Invalid action '{signal['action']}' in signal: {signal}")
-        return False
-    
-    # Check numeric fields are positive
-    if signal['price'] <= 0 or signal['atr'] <= 0:
-        logger.error(f"Price and ATR must be positive in signal: {signal}")
-        return False
-    
-    return True
-
-
+    rm = RiskManager(portfolio_name, date)
+    return rm.generate_signals(strategy_name)

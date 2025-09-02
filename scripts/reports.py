@@ -26,7 +26,8 @@ CONFIG UTILIZZATI:
 
 import logging
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo  
 from typing import Dict, List, Any
 from gspread_dataframe import set_with_dataframe
 
@@ -35,8 +36,18 @@ from .google_services import get_gsheet_client
 from .risk_manager import RiskManager
 from .portfolio import Portfolio
 
+
+
 logger = logging.getLogger(__name__)
 
+
+def _previous_business_day(tz_name: str = "Europe/Rome") -> str:
+    today = datetime.now(ZoneInfo(tz_name)).date()
+    d = today - timedelta(days=1)
+    # 5=Sabato, 6=Domenica
+    while d.weekday() >= 5:
+        d -= timedelta(days=1)
+    return d.strftime('%Y-%m-%d')
 
 # ================================
 # MAIN REPORT GENERATION
@@ -54,7 +65,7 @@ def generate_weekly_report(portfolio_name: str = "demo",
     Returns:
         Dict con summary della generazione
     """
-    report_date = date or datetime.now().strftime('%Y-%m-%d')
+    report_date = date or _previous_business_day()
     logger.info(f"🚀 Inizio generazione report settimanale per {portfolio_name} @ {report_date}")
     
     try:
@@ -472,13 +483,3 @@ def _log_final_summary(result: Dict[str, Any]):
     logger.info(f"   Active positions: {portfolio_info['Positions_Count']}")
 
 
-# ================================
-# BACKWARD COMPATIBILITY  
-# ================================
-
-def generate_weekly_report_legacy():
-    """
-    Wrapper per compatibilità con il vecchio entry point.
-    Mantiene la stessa firma della funzione originale.
-    """
-    return generate_weekly_report(portfolio_name="demo")

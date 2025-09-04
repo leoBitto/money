@@ -3,7 +3,7 @@
 from .portfolio import Portfolio
 from .database import *
 from .config import *
-from typing import Dict, Any
+from typing import Dict, Any, Callable, Optional, List
 from datetime import datetime, timedelta
 import pandas as pd
 import logging

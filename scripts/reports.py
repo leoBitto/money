@@ -33,7 +33,6 @@ from gspread_dataframe import set_with_dataframe
 
 from . import config
 from .google_services import get_gsheet_client
-from .risk_manager import RiskManager
 from .portfolio import Portfolio
 import scripts.strategies as strategies
 

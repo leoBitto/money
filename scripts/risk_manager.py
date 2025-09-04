@@ -10,7 +10,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-def get_signals(strategy_fn: Callable, date, portfolio_name)
+def get_signals(strategy_fn: Callable, date, portfolio_name):
     # prendi il portfolio alla data di interesse
     portfolio = Portfolio(portfolio_name, date)
     df_universe = get_universe_data()

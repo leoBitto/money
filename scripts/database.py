@@ -419,3 +419,41 @@ def create_portfolio_tables():
         raise
     
     logger.info("Setup completo tabelle portfolio completato con successo")
+
+
+def reset_entire_db(confirm: bool = False):
+    """
+    Elimina TUTTE le tabelle gestite dal modulo, inclusa universe.
+    ATTENZIONE: cancella tutti i dati!
+    
+    Parameters
+    ----------
+    confirm : bool
+        Deve essere True per eseguire realmente la cancellazione.
+    """
+    if not confirm:
+        logger.warning("Reset DB non eseguito. Imposta confirm=True per confermare.")
+        return
+    
+    tables = [
+        "portfolio_trades",
+        "portfolio_positions",
+        "portfolio_snapshots",
+        "portfolio_trades_backtest",
+        "portfolio_positions_backtest",
+        "portfolio_snapshots_backtest",
+        #"universe"
+    ]
+    
+    with _get_connection_context() as conn:
+        with conn.cursor() as cursor:
+            for table in tables:
+                try:
+                    cursor.execute(f"DROP TABLE IF EXISTS {table} CASCADE;")
+                    logger.info(f"Tabella {table} eliminata con successo")
+                except Exception as e:
+                    logger.error(f"Errore eliminando tabella {table}: {e}")
+                    raise
+        conn.commit()
+    
+    logger.info("Reset completo del database (tabelle universe e portfolio/backtest eliminate)")

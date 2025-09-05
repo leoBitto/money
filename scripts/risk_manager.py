@@ -200,7 +200,7 @@ def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade
         logger.warning(f"Risk distance is zero for {ticker}, skipping BUY")
         return
 
-    price = float(database.get_last_close(ticker))
+    price = float(get_last_close(ticker))
     logger.info(f"Last close price for {ticker}: {price}")
 
     position_size = risk_amount / risk_distance

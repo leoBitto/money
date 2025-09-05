@@ -133,6 +133,7 @@ def get_universe_data(start_date: Optional[str] = None,
         WHERE {where_clause}
         ORDER BY ticker, date
     """
+    logger.info(f"query : {query}")
     rows, colnames = execute_query(query, tuple(params), with_columns=True)
     if not rows:
         return pd.DataFrame(columns=colnames)

@@ -184,10 +184,7 @@ def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade
     available_cash = portfolio.get_available_cash()
     logger.info(f"Available cash: {available_cash}")
 
-    equity = portfolio.get_total_value()
-    logger.info(f"Portfolio total value: {equity}")
-
-    risk_amount = equity * risk_per_trade
+    risk_amount = available_cash * risk_per_trade
     logger.info(f"Risk amount ({risk_per_trade*100:.2f}% of total value): {risk_amount}")
 
     # Calcolo ATR

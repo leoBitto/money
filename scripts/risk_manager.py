@@ -143,7 +143,7 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
         ATR value
     """
     start_date = portfolio.date
-    end_date = (datetime.strptime(start_date, '%Y-%m-%d') - timedelta(days=period)).strftime('%Y-%m-%d')
+    end_date = start_date - timedelta(days=period)).strftime('%Y-%m-%d')
         
     df = database.get_universe_data(start_date=start_date, end_date=end_date, ticker=ticker)
     if len(df) < 2:

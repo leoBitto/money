@@ -150,7 +150,7 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
     logger.info(f"start_date : {start_date}")
     logger.info(f"end_date : {end_date}")
 
-    df = get_universe_data(start_date=start_date, end_date=end_date, tickers=ticker)
+    df = get_universe_data(start_date=start_date, end_date=end_date, tickers=[ticker])
     logger.info(f"Data for ATR calculation for {ticker}: {df}")
     
     if len(df) < 2:

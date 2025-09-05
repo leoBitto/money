@@ -86,49 +86,78 @@ def _refine_signals(df_signals, portfolio) -> Dict[str, Dict[str, Any]]:
     atr_factor = config.DEFAULT_ATR_MULTIPLIER
 
     dict_enriched = {"HOLD": {}, "SELL": {}, "BUY": {}}
+    temp_positions_count = portfolio.get_positions_count()
+    temp_available_cash = portfolio.get_available_cash()
+
 
     for _, row in df_signals.iterrows():
         ticker, signal = row["ticker"], row["signal"].upper()
 
         if signal == "HOLD":
-            _process_hold(ticker, portfolio, dict_enriched)
+            new_temp_positions_count, new_temp_available_cash = _process_hold(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash)
+            temp_positions_count = new_temp_positions_count
+            temp_available_cash = new_temp_available_cash
 
         elif signal == "SELL":
-            _process_sell(ticker, portfolio, dict_enriched)
+            new_temp_positions_count,new_temp_available_cash = _process_sell(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash)
+            temp_positions_count = new_temp_positions_count
+            temp_available_cash = new_temp_available_cash
 
         elif signal == "BUY":
             _process_buy(ticker, portfolio, dict_enriched,
-                         max_positions=max_positions,
-                         risk_per_trade=risk_per_trade,
-                         atr_factor=atr_factor)
+                            max_positions=max_positions,
+                            risk_per_trade=risk_per_trade,
+                            atr_factor=atr_factor,
+                            temp_positions_count=temp_positions_count,
+                            temp_available_cash=temp_available_cash)
+
+            # aggiorna valori temporanei
+            if ticker in dict_enriched["BUY"]:
+                temp_positions_count += 1
+                temp_available_cash -= dict_enriched["BUY"][ticker]["size"] * dict_enriched["BUY"][ticker]["price"]
 
     return dict_enriched
 
 
 # ---------- Helper functions ----------
 
-def _process_hold(ticker, portfolio, dict_enriched):
+def _process_hold(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash):
     pos = portfolio.get_position(ticker)
     if pos is None:
-        return
-    if pos.is_stop_loss_hit():  
+        dict_enriched["HOLD"][ticker] = {"reason": "NO POSITION"}
+        # nessun cambiamento a count/cash
+        return temp_positions_count, temp_available_cash
+
+    if pos.is_stop_loss_hit():
         dict_enriched["SELL"][ticker] = {
             "reason": "STOP LOSS",
             "quantity": pos.shares
         }
+        # aggiorna temp count e cash
+        temp_positions_count -= 1
+        temp_available_cash += pos.shares * pos.current_price
     else:
-        dict_enriched["HOLD"][ticker] = {
-            "reason": "KEEP"
-        }
+        dict_enriched["HOLD"][ticker] = {"reason": "KEEP"}
+
+    return temp_positions_count, temp_available_cash
 
 
-def _process_sell(ticker, portfolio, dict_enriched):
+def _process_sell(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash):
     pos = portfolio.get_position(ticker)
-    if pos:
-        dict_enriched["SELL"][ticker] = {
-            "reason": "STRATEGY SELL",
-            "quantity": pos.shares
-        }
+    if pos is None:
+        dict_enriched["SELL"][ticker] = {"reason": "STRATEGY SELL - NO POSITION"}
+        return temp_positions_count, temp_available_cash
+
+    dict_enriched["SELL"][ticker] = {
+        "reason": "STRATEGY SELL",
+        "quantity": pos.shares
+    }
+    # aggiorna temp count e cash
+    temp_positions_count -= 1
+    temp_available_cash += pos.shares * pos.current_price
+
+    return temp_positions_count, temp_available_cash
+
 
   
 def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
@@ -173,38 +202,38 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
 
 
 def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade, atr_factor):
-    logger.info(f"Processing BUY for ticker {ticker}")
+    #logger.info(f"Processing BUY for ticker {ticker}")
 
     positions_count = portfolio.get_positions_count()
-    logger.info(f"Current positions count: {positions_count} / Max allowed: {max_positions}")
+    #logger.info(f"Current positions count: {positions_count} / Max allowed: {max_positions}")
     if positions_count >= max_positions:
         logger.info(f"Max positions reached, skipping BUY for {ticker}")
         return
 
     available_cash = portfolio.get_available_cash()
-    logger.info(f"Available cash: {available_cash}")
+    #logger.info(f"Available cash: {available_cash}")
 
     risk_amount = available_cash * risk_per_trade
-    logger.info(f"Risk amount ({risk_per_trade*100:.2f}% of total value): {risk_amount}")
+    #logger.info(f"Risk amount ({risk_per_trade*100:.2f}% of total value): {risk_amount}")
 
     # Calcolo ATR
     atr = _calculate_atr(portfolio, ticker)
-    logger.info(f"ATR for {ticker}: {atr}")
+    #logger.info(f"ATR for {ticker}: {atr}")
     if atr == 0:
         logger.warning(f"ATR is zero for {ticker}, cannot calculate position size")
         return
 
     risk_distance = atr * atr_factor
-    logger.info(f"Risk distance (ATR * factor {atr_factor}): {risk_distance}")
+    #logger.info(f"Risk distance (ATR * factor {atr_factor}): {risk_distance}")
     if risk_distance == 0:
         logger.warning(f"Risk distance is zero for {ticker}, skipping BUY")
         return
 
     price = float(get_last_close(ticker))
-    logger.info(f"Last close price for {ticker}: {price}")
+    #logger.info(f"Last close price for {ticker}: {price}")
 
     position_size = risk_amount / risk_distance
-    logger.info(f"Calculated position size before cash check: {position_size}")
+    #logger.info(f"Calculated position size before cash check: {position_size}")
 
     # Controllo cash disponibile
     if position_size < 1 or position_size * price > available_cash:

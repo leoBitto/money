@@ -19,7 +19,7 @@ def moving_average_crossover(df, short_window=3, long_window=5):
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing at least the 'Close' column.
+        DataFrame containing at least the 'close' column.
     short_window : int
         Number of periods for the short moving average.
     long_window : int
@@ -37,8 +37,8 @@ def moving_average_crossover(df, short_window=3, long_window=5):
     df = df.copy()
 
     # calculate short and long moving averages
-    df['MA_short'] = df['Close'].rolling(short_window).mean()
-    df['MA_long'] = df['Close'].rolling(long_window).mean()
+    df['MA_short'] = df['close'].rolling(short_window).mean()
+    df['MA_long'] = df['close'].rolling(long_window).mean()
 
     # initialize signal column
     df['signal'] = 0
@@ -72,7 +72,7 @@ def rsi_strategy(df, period=14, overbought=70, oversold=30):
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing at least the 'Close' column.
+        DataFrame containing at least the 'close' column.
     period : int
         Number of periods for RSI calculation.
     overbought : float
@@ -88,7 +88,7 @@ def rsi_strategy(df, period=14, overbought=70, oversold=30):
         - 'signal': trading signal (1=buy, -1=sell, 0=hold)
     """
     df = df.copy()
-    delta = df['Close'].diff()
+    delta = df['close'].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     
@@ -117,14 +117,14 @@ def breakout_strategy(df, lookback=20):
 
     Technical explanation:
     - Compute rolling max and min over the lookback window
-    - Buy signal (1) if Close > rolling max
-    - Sell signal (-1) if Close < rolling min
+    - Buy signal (1) if close > rolling max
+    - Sell signal (-1) if close < rolling min
     - Hold (0) otherwise
 
     Parameters
     ----------
     df : pd.DataFrame
-        DataFrame containing at least the 'Close' column.
+        DataFrame containing at least the 'close' column.
     lookback : int
         Number of periods to look back for highs/lows.
 
@@ -137,11 +137,11 @@ def breakout_strategy(df, lookback=20):
         - 'signal': trading signal (1=buy, -1=sell, 0=hold)
     """
     df = df.copy()
-    df['rolling_max'] = df['Close'].rolling(lookback).max()
-    df['rolling_min'] = df['Close'].rolling(lookback).min()
+    df['rolling_max'] = df['close'].rolling(lookback).max()
+    df['rolling_min'] = df['close'].rolling(lookback).min()
     
     df['signal'] = 0
-    df.loc[df['Close'] > df['rolling_max'], 'signal'] = 1
-    df.loc[df['Close'] < df['rolling_min'], 'signal'] = -1
+    df.loc[df['close'] > df['rolling_max'], 'signal'] = 1
+    df.loc[df['close'] < df['rolling_min'], 'signal'] = -1
     
     return df

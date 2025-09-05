@@ -22,8 +22,6 @@ from scripts.strategies import rsi_strategy
 # Google Sheets
 from scripts.google_services import get_universe_tickers_from_gsheet
 
-# Config
-from scripts.config import config
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

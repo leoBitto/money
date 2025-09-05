@@ -126,7 +126,7 @@ def _refine_signals(df_signals, portfolio) -> Dict[str, Dict[str, Any]]:
 def _process_hold(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash):
     pos = portfolio.get_position(ticker)
     if pos is None:
-        dict_enriched["HOLD"][ticker] = {"reason": "NO POSITION"}
+        #dict_enriched["HOLD"][ticker] = {"reason": "NO POSITION"}
         # nessun cambiamento a count/cash
         return temp_positions_count, temp_available_cash
 
@@ -147,7 +147,7 @@ def _process_hold(ticker, portfolio, dict_enriched, temp_positions_count, temp_a
 def _process_sell(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash):
     pos = portfolio.get_position(ticker)
     if pos is None:
-        dict_enriched["SELL"][ticker] = {"reason": "STRATEGY SELL - NO POSITION"}
+        #dict_enriched["SELL"][ticker] = {"reason": "STRATEGY SELL - NO POSITION"}
         return temp_positions_count, temp_available_cash
 
     dict_enriched["SELL"][ticker] = {
@@ -178,11 +178,11 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
     start_date = end_date - timedelta(days=period)
 
 
-    logger.info(f"start_date : {start_date}")
-    logger.info(f"end_date : {end_date}")
+    #logger.info(f"start_date : {start_date}")
+    #logger.info(f"end_date : {end_date}")
 
     df = get_universe_data(start_date=start_date, end_date=end_date, tickers=ticker)
-    logger.info(f"Data for ATR calculation for {ticker}: {df}")
+    #logger.info(f"Data for ATR calculation for {ticker}: {df}")
     
     if len(df) < 2:
         return 0.0

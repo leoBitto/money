@@ -150,7 +150,7 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
     logger.info(f"start_date : {start_date}")
     logger.info(f"end_date : {end_date}")
 
-    df = get_universe_data(start_date=start_date, end_date=end_date, tickers=[ticker])
+    df = get_universe_data(start_date=start_date, end_date=end_date, tickers=ticker)
     logger.info(f"Data for ATR calculation for {ticker}: {df}")
     
     if len(df) < 2:
@@ -200,7 +200,7 @@ def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade
         logger.warning(f"Risk distance is zero for {ticker}, skipping BUY")
         return
 
-    price = database.get_last_close(ticker)
+    price = get_last_close(ticker)
     logger.info(f"Last close price for {ticker}: {price}")
 
     position_size = risk_amount / risk_distance

@@ -113,12 +113,22 @@ def get_last_close(ticker: str) -> Optional[float]:
 
 def get_universe_data(start_date: Optional[str] = None,
                       end_date: Optional[str] = None,
-                      tickers: Optional[List[str]] = None) -> pd.DataFrame:
+                      tickers: Optional[Union[str, List[str]]] = None) -> pd.DataFrame:
+    """
+    Recupera dati OHLC dal DB 'universe' filtrando per date e tickers.
+    tickers può essere una stringa (singolo ticker) o una lista di ticker.
+    """
     conditions, params = [], []
+
+    # Gestione tickers
     if tickers:
+        if isinstance(tickers, str):
+            tickers = [tickers]  # converti singolo ticker in lista
         placeholders = ','.join(['%s'] * len(tickers))
         conditions.append(f"ticker IN ({placeholders})")
         params.extend(tickers)
+
+    # Date
     if start_date:
         conditions.append("date >= %s")
         params.append(start_date)
@@ -133,10 +143,12 @@ def get_universe_data(start_date: Optional[str] = None,
         WHERE {where_clause}
         ORDER BY ticker, date
     """
-    logger.info(f"query : {query}")
+    logger.info(f"Executing query:\n{query}\nParams: {params}")
+
     rows, colnames = execute_query(query, tuple(params), with_columns=True)
     if not rows:
         return pd.DataFrame(columns=colnames)
+
     df = pd.DataFrame(rows, columns=colnames)
     df['date'] = pd.to_datetime(df['date'])
     return df

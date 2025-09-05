@@ -165,27 +165,53 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
 
 
 def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade, atr_factor):
-    if portfolio.get_positions_count() >= max_positions:
+    logger.info(f"Processing BUY for ticker {ticker}")
+
+    positions_count = portfolio.get_positions_count()
+    logger.info(f"Current positions count: {positions_count} / Max allowed: {max_positions}")
+    if positions_count >= max_positions:
+        logger.info(f"Max positions reached, skipping BUY for {ticker}")
         return
 
     available_cash = portfolio.get_available_cash()
+    logger.info(f"Available cash: {available_cash}")
+
     equity = portfolio.get_total_value()
+    logger.info(f"Portfolio total value: {equity}")
+
     risk_amount = equity * risk_per_trade
+    logger.info(f"Risk amount ({risk_per_trade*100:.2f}% of total value): {risk_amount}")
 
-    atr = _calculate_atr(portfolio, ticker)  
-    risk_distance = atr * atr_factor
-
-    position_size = risk_amount / risk_distance
-    price = database.get_last_close(ticker)
-
-    stop = price - risk_distance
-
-    if position_size < 1 or position_size * price > available_cash:
+    # Calcolo ATR
+    atr = _calculate_atr(portfolio, ticker)
+    logger.info(f"ATR for {ticker}: {atr}")
+    if atr == 0:
+        logger.warning(f"ATR is zero for {ticker}, cannot calculate position size")
         return
 
+    risk_distance = atr * atr_factor
+    logger.info(f"Risk distance (ATR * factor {atr_factor}): {risk_distance}")
+    if risk_distance == 0:
+        logger.warning(f"Risk distance is zero for {ticker}, skipping BUY")
+        return
+
+    price = database.get_last_close(ticker)
+    logger.info(f"Last close price for {ticker}: {price}")
+
+    position_size = risk_amount / risk_distance
+    logger.info(f"Calculated position size before cash check: {position_size}")
+
+    # Controllo cash disponibile
+    if position_size < 1 or position_size * price > available_cash:
+        logger.info(f"Position size too small or exceeds available cash, skipping BUY for {ticker}")
+        return
+
+    stop = price - risk_distance
     dict_enriched["BUY"][ticker] = {
         "size": int(position_size),
         "price": price,
         "stop": stop,
         "risk": risk_amount
     }
+
+    logger.info(f"BUY signal prepared for {ticker}: {dict_enriched['BUY'][ticker]}")

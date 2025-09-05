@@ -145,6 +145,9 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
     start_date = portfolio.date
     end_date = start_date - timedelta(days=period)
 
+    start_date = start_date.strftime('%Y-%m-%d')
+    end_date = end_date.strftime('%Y-%m-%d')
+
     logger.info(f"start_date : {start_date}")
     logger.info(f"end_date : {end_date}")
 

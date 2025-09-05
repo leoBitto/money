@@ -197,6 +197,19 @@ class Portfolio:
     def get_cash_balance(self) -> float:
         return float(self._snapshot.get('cash_balance', 0.0))
 
+    def get_available_cash(self) -> float:
+        """
+        Ritorna il cash disponibile per nuove operazioni,
+        sottraendo il buffer percentuale definito in config.DEFAULT_CASH_BUFFER.
+
+        Il buffer è una frazione del cash totale, ad esempio 0.1 = 10%.
+        """
+        cash = float(self._snapshot.get('cash_balance', 0.0))
+        buffer_amount = cash * config.DEFAULT_CASH_BUFFER
+        available = cash - buffer_amount
+        return max(0.0, available)
+
+
     def get_total_value(self) -> float:
         return float(self._snapshot.get('total_value', 0.0))
 

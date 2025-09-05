@@ -152,6 +152,7 @@ def create_universe_table():
         close NUMERIC(18,6),
         volume NUMERIC(20,2),
         PRIMARY KEY (date, ticker)
+        );
         """
 
     execute_query(universe_query, fetch=False)

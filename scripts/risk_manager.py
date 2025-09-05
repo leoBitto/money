@@ -169,18 +169,19 @@ def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade
         return
 
     available_cash = portfolio.get_available_cash()
-    equity = portfolio.get_equity()
+    equity = portfolio.get_total_value()
     risk_amount = equity * risk_per_trade
 
     atr = _calculate_atr(portfolio, ticker)  
     risk_distance = atr * atr_factor
 
     position_size = risk_amount / risk_distance
-    if position_size < 1:
-        return
-
     price = database.get_last_close(ticker)
+
     stop = price - risk_distance
+
+    if position_size < 1 or position_size * price > available_cash:
+        return
 
     dict_enriched["BUY"][ticker] = {
         "size": int(position_size),

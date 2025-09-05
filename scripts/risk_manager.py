@@ -144,13 +144,18 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
     """
     start_date = portfolio.date
     end_date = start_date - timedelta(days=period)
-        
+
+    logger.info(f"start_date : {start_date}")
+    logger.info(f"end_date : {end_date}")
+
     df = get_universe_data(start_date=start_date, end_date=end_date, tickers=ticker)
+    logger.info(f"Data for ATR calculation for {ticker}: {df}")
+    
     if len(df) < 2:
         return 0.0
     
     df = df.sort_values('date').copy()
-    logger.info(f"Data for ATR calculation for {ticker}: {df}")
+    
     
     # True Range = max(high-low, high-prev_close, prev_close-low)
     df['prev_close'] = df['close'].shift(1)

@@ -143,7 +143,7 @@ def get_universe_data(start_date: Optional[str] = None,
 
 def create_universe_table():
     universe_query = """
-        CREATE TABLE universe (
+        CREATE TABLE IF NOT EXISTS universe (
         date DATE NOT NULL,
         ticker VARCHAR(50) NOT NULL,
         open NUMERIC(18,6),
@@ -168,7 +168,7 @@ def create_portfolio_tables():
     # ===============================
     
     snapshots_query = """
-        CREATE TABLE portfolio_snapshots (
+        CREATE TABLE IF NOT EXISTS portfolio_snapshots (
         date DATE NOT NULL,
         portfolio_name VARCHAR(50) NOT NULL,
 
@@ -194,7 +194,7 @@ def create_portfolio_tables():
     """
 
     positions_query = """
-        CREATE TABLE portfolio_positions (
+        CREATE TABLE IF NOT EXISTS portfolio_positions (
             date DATE NOT NULL,
             portfolio_name VARCHAR(50) NOT NULL,
             ticker VARCHAR(10) NOT NULL,
@@ -219,7 +219,7 @@ def create_portfolio_tables():
     """
 
     trades_query = """
-        CREATE TABLE portfolio_trades (
+        CREATE TABLE IF NOT EXISTS portfolio_trades (
             id SERIAL PRIMARY KEY,
             date DATE NOT NULL,
             portfolio_name VARCHAR(50) NOT NULL,

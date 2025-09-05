@@ -131,7 +131,7 @@ LOG_LEVELS = {
 # =========================
 # RISK MANAGEMENT
 # =========================
-DEFAULT_RISK_PCT_PER_TRADE = 2.0    # % of portfolio risked per single trade
+DEFAULT_RISK_PCT_PER_TRADE = 0.02    # % of portfolio risked per single trade
 DEFAULT_MAX_POSITIONS = 5            # Maximum simultaneous positions  
 DEFAULT_ATR_MULTIPLIER = 2.0         # Stop loss distance in ATR units
 DEFAULT_CASH_BUFFER = 0.10           # Keep 10% cash buffer

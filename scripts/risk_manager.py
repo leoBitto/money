@@ -150,6 +150,7 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
         return 0.0
     
     df = df.sort_values('date').copy()
+    logger.info(f"Data for ATR calculation for {ticker}: {df}")
     
     # True Range = max(high-low, high-prev_close, prev_close-low)
     df['prev_close'] = df['close'].shift(1)

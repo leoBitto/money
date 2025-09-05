@@ -21,7 +21,7 @@ from scripts.strategies import rsi_strategy
 
 # Google Sheets
 from scripts.google_services import get_universe_tickers_from_gsheet
-
+from scripts.data_fetcher import get_data_for_db_between_dates
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)

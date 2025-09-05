@@ -82,40 +82,6 @@ class PriceNotFoundError(Exception):
 
 
 # ================================
-# 0. UTILITY FUNCTIONS
-# ================================
-
-def get_portfolio_names(backtest: bool = False) -> List[str]:
-    """
-    Utility function per ottenere lista portfolio disponibili.
-    
-    Args:
-        backtest: Se True, cerca nei portfolio di backtest
-        
-    Returns:
-        Lista dei nomi portfolio
-    """
-    return Portfolio.list_available(backtest)
-
-
-def create_new_portfolio(name: str, date: str, initial_cash: float = 10000.0, 
-                        backtest: bool = False) -> Portfolio:
-    """
-    Utility function per creare un nuovo portfolio.
-    
-    Args:
-        name: Nome del portfolio
-        date: Data di creazione
-        initial_cash: Cash iniziale
-        backtest: Flag backtest
-        
-    Returns:
-        Portfolio object creato
-    """
-    return Portfolio.create(name, date, initial_cash, backtest)
-
-
-# ================================
 # 1. PORTFOLIO CLASS
 # ================================
 
@@ -761,3 +727,40 @@ class Trade:
         # Commission
         if commission < 0:
             raise ValueError(f"Commissione non valida: {commission}")
+
+
+
+
+# ================================
+# 0. UTILITY FUNCTIONS
+# ================================
+
+def get_portfolio_names(backtest: bool = False) -> List[str]:
+    """
+    Utility function per ottenere lista portfolio disponibili.
+    
+    Args:
+        backtest: Se True, cerca nei portfolio di backtest
+        
+    Returns:
+        Lista dei nomi portfolio
+    """
+    return Portfolio.list_available(backtest)
+
+
+def create_new_portfolio(name: str, date: str, initial_cash: float = 10000.0, 
+                        backtest: bool = False) -> Portfolio:
+    """
+    Utility function per creare un nuovo portfolio.
+    
+    Args:
+        name: Nome del portfolio
+        date: Data di creazione
+        initial_cash: Cash iniziale
+        backtest: Flag backtest
+        
+    Returns:
+        Portfolio object creato
+    """
+    return Portfolio.create(name, date, initial_cash, backtest)
+

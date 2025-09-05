@@ -3,7 +3,8 @@ import psycopg2
 import psycopg2.extras
 import pandas as pd
 from contextlib import contextmanager
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, Union
+
 
 from . import config
 from .google_services import get_secret
@@ -143,7 +144,7 @@ def get_universe_data(start_date: Optional[str] = None,
         WHERE {where_clause}
         ORDER BY ticker, date
     """
-    logger.info(f"Executing query:\n{query}\nParams: {params}")
+    #logger.info(f"Executing query:\n{query}\nParams: {params}")
 
     rows, colnames = execute_query(query, tuple(params), with_columns=True)
     if not rows:

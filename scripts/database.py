@@ -167,82 +167,72 @@ def create_portfolio_tables():
     # ===============================
     
     snapshots_query = """
-    CREATE TABLE IF NOT EXISTS portfolio_snapshots (
+        CREATE TABLE portfolio_snapshots (
         date DATE NOT NULL,
-        portfolio_name VARCHAR(50) NOT NULL DEFAULT 'default',
-        
-        -- Valori base portafoglio
+        portfolio_name VARCHAR(50) NOT NULL,
+
+        -- Stato base del portafoglio
         total_value DECIMAL(12,2) NOT NULL,
         cash_balance DECIMAL(12,2) NOT NULL,
         positions_count INTEGER DEFAULT 0,
-        
-        -- Metriche performance (stored in DB)
-        daily_return_pct DECIMAL(8,4),
+
+        -- Metriche performance
         total_return_pct DECIMAL(8,4),
-        volatility_pct DECIMAL(8,4),
-        current_drawdown_pct DECIMAL(8,4),
         max_drawdown_pct DECIMAL(8,4),
+        volatility_pct DECIMAL(8,4),
         sharpe_ratio DECIMAL(8,4),
         win_rate_pct DECIMAL(8,4),
-        peak_value DECIMAL(12,2),
-        
+
         -- Metadata
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW(),
-        
+
         PRIMARY KEY (date, portfolio_name)
+
     );
     """
 
     positions_query = """
-    CREATE TABLE IF NOT EXISTS portfolio_positions (
-        date DATE NOT NULL,
-        portfolio_name VARCHAR(50) NOT NULL DEFAULT 'default',
-        ticker VARCHAR(10) NOT NULL,
-        
-        -- Dati posizione
-        shares INTEGER NOT NULL,
-        avg_cost DECIMAL(10,4) NOT NULL,
-        current_price DECIMAL(10,4) NOT NULL,
-        current_value DECIMAL(12,2) NOT NULL,
+        CREATE TABLE portfolio_positions (
+            date DATE NOT NULL,
+            portfolio_name VARCHAR(50) NOT NULL,
+            ticker VARCHAR(10) NOT NULL,
 
-        -- Risk management  
-        stop_loss DECIMAL(10,4),
-        first_target DECIMAL(10,4),
-        breakeven DECIMAL(10,4),
-        first_half_sold BOOLEAN DEFAULT FALSE,
-        entry_atr DECIMAL(6,4),  
+            -- Dati base
+            shares INTEGER NOT NULL,
+            avg_cost DECIMAL(10,4) NOT NULL,
+            current_price DECIMAL(10,4) NOT NULL,
 
-        -- Metriche posizione
-        position_weight_pct DECIMAL(8,4),
-        position_pnl_pct DECIMAL(8,4),
-        position_volatility DECIMAL(8,4),
-        
-        -- Metadata
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW(),
-        
-        PRIMARY KEY (date, portfolio_name, ticker),
-        FOREIGN KEY (date, portfolio_name) REFERENCES portfolio_snapshots(date, portfolio_name) ON DELETE CASCADE
-    );
+            -- Risk management
+            stop_loss DECIMAL(10,4),
+            profit_target DECIMAL(10,4),
+
+            -- Metadata
+            created_at TIMESTAMP DEFAULT NOW(),
+            updated_at TIMESTAMP DEFAULT NOW(),
+
+            PRIMARY KEY (date, portfolio_name, ticker),
+            FOREIGN KEY (date, portfolio_name) REFERENCES portfolio_snapshots(date, portfolio_name) ON DELETE CASCADE
+        );
+
     """
 
     trades_query = """
-    CREATE TABLE IF NOT EXISTS portfolio_trades (
-        id SERIAL PRIMARY KEY,
-        date DATE NOT NULL,
-        portfolio_name VARCHAR(50) NOT NULL,
-        ticker VARCHAR(10) NOT NULL,
-        operation VARCHAR(4) NOT NULL CHECK (operation IN ('BUY', 'SELL')),
-        quantity INTEGER NOT NULL,
-        price DECIMAL(10,4) NOT NULL,
-        total_value DECIMAL(12,2) NOT NULL,
-        commission DECIMAL(8,2) DEFAULT 0.00,
-        notes TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        
-        FOREIGN KEY (date, portfolio_name) REFERENCES portfolio_snapshots(date, portfolio_name) ON DELETE CASCADE
-    );
+        CREATE TABLE portfolio_trades (
+            id SERIAL PRIMARY KEY,
+            date DATE NOT NULL,
+            portfolio_name VARCHAR(50) NOT NULL,
+            ticker VARCHAR(10) NOT NULL,
+
+            operation VARCHAR(4) NOT NULL CHECK (operation IN ('BUY', 'SELL')),
+            quantity INTEGER NOT NULL,
+            price DECIMAL(10,4) NOT NULL,
+            commission DECIMAL(8,2) DEFAULT 0.00,
+
+            notes TEXT,
+
+            created_at TIMESTAMP DEFAULT NOW()
+        );
     """
     
     # ===============================
@@ -252,27 +242,24 @@ def create_portfolio_tables():
     snapshots_backtest_query = """
     CREATE TABLE IF NOT EXISTS portfolio_snapshots_backtest (
         date DATE NOT NULL,
-        portfolio_name VARCHAR(50) NOT NULL DEFAULT 'default',
-        
-        -- Valori base portafoglio
+        portfolio_name VARCHAR(50) NOT NULL,
+
+        -- Stato base del portafoglio
         total_value DECIMAL(12,2) NOT NULL,
         cash_balance DECIMAL(12,2) NOT NULL,
         positions_count INTEGER DEFAULT 0,
-        
-        -- Metriche performance (stored in DB)
-        daily_return_pct DECIMAL(8,4),
+
+        -- Metriche performance
         total_return_pct DECIMAL(8,4),
-        volatility_pct DECIMAL(8,4),
-        current_drawdown_pct DECIMAL(8,4),
         max_drawdown_pct DECIMAL(8,4),
+        volatility_pct DECIMAL(8,4),
         sharpe_ratio DECIMAL(8,4),
         win_rate_pct DECIMAL(8,4),
-        peak_value DECIMAL(12,2),
-        
+
         -- Metadata
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW(),
-        
+
         PRIMARY KEY (date, portfolio_name)
     );
     """
@@ -280,33 +267,24 @@ def create_portfolio_tables():
     positions_backtest_query = """
     CREATE TABLE IF NOT EXISTS portfolio_positions_backtest (
         date DATE NOT NULL,
-        portfolio_name VARCHAR(50) NOT NULL DEFAULT 'default',
+        portfolio_name VARCHAR(50) NOT NULL,
         ticker VARCHAR(10) NOT NULL,
-        
-        -- Dati posizione
+
+        -- Dati base
         shares INTEGER NOT NULL,
         avg_cost DECIMAL(10,4) NOT NULL,
         current_price DECIMAL(10,4) NOT NULL,
-        current_value DECIMAL(12,2) NOT NULL,
 
-        -- Risk management  
+        -- Risk management
         stop_loss DECIMAL(10,4),
-        first_target DECIMAL(10,4),
-        breakeven DECIMAL(10,4),
-        first_half_sold BOOLEAN DEFAULT FALSE,
-        entry_atr DECIMAL(6,4),  
+        profit_target DECIMAL(10,4),
 
-        -- Metriche posizione
-        position_weight_pct DECIMAL(8,4),
-        position_pnl_pct DECIMAL(8,4),
-        position_volatility DECIMAL(8,4),
-        
         -- Metadata
         created_at TIMESTAMP DEFAULT NOW(),
         updated_at TIMESTAMP DEFAULT NOW(),
-        
+
         PRIMARY KEY (date, portfolio_name, ticker),
-        FOREIGN KEY (date, portfolio_name) REFERENCES portfolio_snapshots_backtest(date, portfolio_name) ON DELETE CASCADE
+        FOREIGN KEY (date, portfolio_name) REFERENCES portfolio_snapshots(date, portfolio_name) ON DELETE CASCADE
     );
     """
 
@@ -316,15 +294,15 @@ def create_portfolio_tables():
         date DATE NOT NULL,
         portfolio_name VARCHAR(50) NOT NULL,
         ticker VARCHAR(10) NOT NULL,
+
         operation VARCHAR(4) NOT NULL CHECK (operation IN ('BUY', 'SELL')),
         quantity INTEGER NOT NULL,
         price DECIMAL(10,4) NOT NULL,
-        total_value DECIMAL(12,2) NOT NULL,
         commission DECIMAL(8,2) DEFAULT 0.00,
+
         notes TEXT,
-        created_at TIMESTAMP DEFAULT NOW(),
-        
-        FOREIGN KEY (date, portfolio_name) REFERENCES portfolio_snapshots_backtest(date, portfolio_name) ON DELETE CASCADE
+
+        created_at TIMESTAMP DEFAULT NOW()
     );
     """
     
@@ -338,54 +316,39 @@ def create_portfolio_tables():
         ON portfolio_snapshots(date);
     CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_name_date 
         ON portfolio_snapshots(portfolio_name, date DESC);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_total_value 
-        ON portfolio_snapshots(total_value DESC);
-        
+
     -- Indici portfolio_positions  
     CREATE INDEX IF NOT EXISTS idx_portfolio_positions_ticker 
         ON portfolio_positions(ticker);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_positions_weight 
-        ON portfolio_positions(position_weight_pct DESC);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_positions_pnl 
-        ON portfolio_positions(position_pnl_pct DESC);
     CREATE INDEX IF NOT EXISTS idx_portfolio_positions_date_name 
         ON portfolio_positions(date, portfolio_name);
-        
+
     -- Indici portfolio_trades
     CREATE INDEX IF NOT EXISTS idx_portfolio_trades_date 
         ON portfolio_trades(date DESC);
     CREATE INDEX IF NOT EXISTS idx_portfolio_trades_ticker 
         ON portfolio_trades(ticker);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_trades_operation 
-        ON portfolio_trades(operation);
     CREATE INDEX IF NOT EXISTS idx_portfolio_trades_portfolio_date 
         ON portfolio_trades(portfolio_name, date DESC);
-        
+
     -- Indici backtest (stessa struttura)
     CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_backtest_date 
         ON portfolio_snapshots_backtest(date);
     CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_backtest_name_date 
         ON portfolio_snapshots_backtest(portfolio_name, date DESC);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_snapshots_backtest_total_value 
-        ON portfolio_snapshots_backtest(total_value DESC);
-        
+
     CREATE INDEX IF NOT EXISTS idx_portfolio_positions_backtest_ticker 
         ON portfolio_positions_backtest(ticker);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_positions_backtest_weight 
-        ON portfolio_positions_backtest(position_weight_pct DESC);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_positions_backtest_pnl 
-        ON portfolio_positions_backtest(position_pnl_pct DESC);
     CREATE INDEX IF NOT EXISTS idx_portfolio_positions_backtest_date_name 
         ON portfolio_positions_backtest(date, portfolio_name);
-        
+
     CREATE INDEX IF NOT EXISTS idx_portfolio_trades_backtest_date 
         ON portfolio_trades_backtest(date DESC);
     CREATE INDEX IF NOT EXISTS idx_portfolio_trades_backtest_ticker 
         ON portfolio_trades_backtest(ticker);
-    CREATE INDEX IF NOT EXISTS idx_portfolio_trades_backtest_operation 
-        ON portfolio_trades_backtest(operation);
     CREATE INDEX IF NOT EXISTS idx_portfolio_trades_backtest_portfolio_date 
         ON portfolio_trades_backtest(portfolio_name, date DESC);
+
     """
 
     # ===============================

@@ -104,12 +104,14 @@ def _refine_signals(df_signals, portfolio) -> Dict[str, Dict[str, Any]]:
             temp_available_cash = new_temp_available_cash
 
         elif signal == "BUY":
-            _process_buy(ticker, portfolio, dict_enriched,
+            new_temp_positions_count,new_temp_available_cash = _process_buy(ticker, portfolio, dict_enriched,
                             max_positions=max_positions,
                             risk_per_trade=risk_per_trade,
                             atr_factor=atr_factor,
                             temp_positions_count=temp_positions_count,
                             temp_available_cash=temp_available_cash)
+            temp_positions_count = new_temp_positions_count
+            temp_available_cash = new_temp_available_cash
 
             # aggiorna valori temporanei
             if ticker in dict_enriched["BUY"]:
@@ -201,14 +203,14 @@ def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
     return float(atr) if pd.notna(atr) else 0.0
 
 
-def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade, atr_factor):
+def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade, atr_factor, temp_positions_count, temp_available_cash):
     #logger.info(f"Processing BUY for ticker {ticker}")
 
     positions_count = portfolio.get_positions_count()
     #logger.info(f"Current positions count: {positions_count} / Max allowed: {max_positions}")
     if positions_count >= max_positions:
         logger.info(f"Max positions reached, skipping BUY for {ticker}")
-        return
+        return temp_positions_count, temp_available_cash
 
     available_cash = portfolio.get_available_cash()
     #logger.info(f"Available cash: {available_cash}")
@@ -221,13 +223,13 @@ def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade
     #logger.info(f"ATR for {ticker}: {atr}")
     if atr == 0:
         logger.warning(f"ATR is zero for {ticker}, cannot calculate position size")
-        return
+        return temp_positions_count, temp_available_cash
 
     risk_distance = atr * atr_factor
     #logger.info(f"Risk distance (ATR * factor {atr_factor}): {risk_distance}")
     if risk_distance == 0:
         logger.warning(f"Risk distance is zero for {ticker}, skipping BUY")
-        return
+        return temp_positions_count, temp_available_cash
 
     price = float(get_last_close(ticker))
     #logger.info(f"Last close price for {ticker}: {price}")
@@ -238,7 +240,7 @@ def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade
     # Controllo cash disponibile
     if position_size < 1 or position_size * price > available_cash:
         logger.info(f"Position size too small or exceeds available cash, skipping BUY for {ticker}")
-        return
+        return temp_positions_count, temp_available_cash
 
     stop = price - risk_distance
     dict_enriched["BUY"][ticker] = {
@@ -249,3 +251,8 @@ def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade
     }
 
     logger.info(f"BUY signal prepared for {ticker}: {dict_enriched['BUY'][ticker]}")
+
+    temp_positions_count += 1
+    temp_available_cash += int(position_size) * price
+    
+    return temp_positions_count, temp_available_cash

@@ -1,258 +1,243 @@
-# risk_manager.py
+# scripts/risk_manager.py
+"""
+Risk Manager minimale e deterministico.
 
-from .portfolio import Portfolio
-from .database import *
-from .config import *
-from typing import Dict, Any, Callable, Optional, List
-from datetime import datetime, timedelta
-import pandas as pd
+CONTRATTO:
+- Caller deve passare `df` già FILTRATO fino a `date` (incluso).
+- Strategie leggono i loro iperparametri da `config`.
+- Output: dict_enriched con chiavi "BUY","SELL","HOLD" contenente SOLO
+  le informazioni utili a portfolio.execute_trades(...).
+
+Firma principale:
+    generate_signals(strategy_fn, df, date, portfolio) -> Dict[str, Dict[str, Any]]
+"""
+
 import logging
+from typing import Callable, Dict, Any
+import pandas as pd
+
+from . import config
 
 logger = logging.getLogger(__name__)
 
-def get_signals(strategy_fn: Callable, date, portfolio_name):
-    # prendi il portfolio alla data di interesse
-    portfolio = Portfolio(portfolio_name, date)
-    df_universe = get_universe_data()
 
-    df_signals_raw = _generate_signals_df(strategy_fn, df_universe)
-
-    return _refine_signals(df_signals_raw, portfolio)
-
-
-def _generate_signals_df(strategy_fn: Callable, df: pd.DataFrame, **strategy_params) -> pd.DataFrame:
+# -------------------------
+# Helper: ATR (usa solo il df fornito)
+# -------------------------
+def _calculate_atr_from_df(df_ticker: pd.DataFrame, period: int) -> float:
     """
-    Applica una strategia ai dati e genera segnali.
+    Calcola ATR usando le righe fornite in df_ticker (assunte fino alla data di analisi).
+    Restituisce 0.0 se non ci sono abbastanza dati.
+    """
+    if df_ticker is None or len(df_ticker) < 2:
+        return 0.0
 
-    Args:
-        strategy_fn: funzione strategia (es. moving_average_crossover, rsi_strategy, breakout_strategy)
-        df: DataFrame con colonne ['date','ticker','Open','High','Low','Close','Volume']
-        **strategy_params: parametri da passare alla strategia
+    # Assumo che df_ticker sia ordinato per date asc
+    df = df_ticker.copy()
+    df["prev_close"] = df["close"].shift(1)
+    df["tr1"] = df["high"] - df["low"]
+    df["tr2"] = (df["high"] - df["prev_close"]).abs()
+    df["tr3"] = (df["low"] - df["prev_close"]).abs()
+    df["true_range"] = df[["tr1", "tr2", "tr3"]].max(axis=1)
 
-    Returns:
-        DataFrame con ['ticker','signal'], dove signal è "BUY","SELL","HOLD"
+    # Rolling mean su 'true_range' e prendo l'ultimo valore
+    if len(df["true_range"].dropna()) < 1:
+        return 0.0
+
+    # Se non ci sono abbastanza righe per il periodo, uso la media disponibile sulle ultime N
+    atr_series = df["true_range"].rolling(window=period, min_periods=1).mean()
+    atr = atr_series.iloc[-1]
+    return float(atr) if pd.notna(atr) else 0.0
+
+
+# -------------------------
+# Helper: genera segnali grezzi (usa la strategy_fn)
+# -------------------------
+def _generate_signals_df(strategy_fn: Callable, df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Applica la strategy_fn a ogni ticker del df (che DEVE essere troncato fino a date)
+    e restituisce DataFrame con colonne ['ticker','signal'] dove signal è 'BUY'/'SELL'/'HOLD'.
+    La strategy_fn deve restituire un DataFrame con colonna 'signal' (1/-1/0).
     """
     results = []
+    available_tickers = df["ticker"].unique()
 
-    for ticker in df["ticker"].unique():
-        df_ticker = df[df["ticker"] == ticker].copy()
-        if df_ticker.empty:
+    for ticker in available_tickers:
+        df_t = df[df["ticker"] == ticker].copy()
+        if df_t.empty:
             results.append({"ticker": ticker, "signal": "HOLD"})
             continue
 
-        # Ordina per data
-        df_ticker = df_ticker.sort_values("date").reset_index(drop=True)
+        df_t = df_t.sort_values("date").reset_index(drop=True)
 
         try:
-            # Applica la strategia → la strategia deve restituire df con colonna 'signal'
-            df_with_signals = strategy_fn(df_ticker, **strategy_params)
-
-            # Prendi l’ultimo segnale valido
-            valid_signals = df_with_signals["signal"].dropna()
-            if not valid_signals.empty:
-                signal_num = int(valid_signals.iloc[-1])
-            else:
-                signal_num = 0
-
+            out = strategy_fn(df_t)  # la strategy legge i suoi parametri da config
+            series = out["signal"].dropna()
+            signal_num = int(series.iloc[-1]) if not series.empty else 0
         except Exception as e:
-            print(f"Errore nell'applicare la strategia {strategy_fn.__name__} al ticker {ticker}: {e}")
+            logger.warning(f"Strategy error for {ticker}: {e}")
             signal_num = 0
 
+        # map numeric -> label (config.SIGNAL_MAP expected)
         signal_label = config.SIGNAL_MAP.get(signal_num, "HOLD")
         results.append({"ticker": ticker, "signal": signal_label})
 
     return pd.DataFrame(results)
 
 
-def _refine_signals(df_signals, portfolio) -> Dict[str, Dict[str, Any]]:
+# -------------------------
+# Main API
+# -------------------------
+def generate_signals(
+    strategy_fn: Callable,
+    df: pd.DataFrame,
+    date: str,
+    portfolio
+) -> Dict[str, Dict[str, Any]]:
     """
-    Raffina segnali grezzi (BUY, SELL, HOLD) con logica di risk management.
+    Genera segnali arricchiti (BUY/SELL/HOLD) utilizzando i dati già passati (df).
+    IMPORTANT: `df` DEVE essere troncato fino a `date` (incluso). Se non lo è,
+    la funzione solleverà ValueError per evitare look-ahead silenziosi.
 
-    Parameters
-    ----------
-    df_signals : pd.DataFrame
-        Deve avere colonne ["ticker", "signal"].
-    portfolio : Portfolio
-        Oggetto che gestisce posizioni e cash.
+    Parametri
+    ---------
+    strategy_fn : Callable
+        Funzione strategia che ritorna un df con colonna 'signal'.
+    df : pd.DataFrame
+        Universo di dati (multi-ticker) PRE-FILTRATO fino a 'date'.
+        Colonne richieste: ['date','ticker','open','high','low','close','volume'].
+    date : str (YYYY-MM-DD)
+        Data di analisi (il caller deve aver troncato df fino a questa data).
+    portfolio :
+        Oggetto portfolio (usato per leggere posizioni, cash, total_value ecc.)
 
-
-    Returns
+    Ritorno
     -------
-    dict_enriched : dict
-        Dizionario arricchito con decisioni finali.
+    dict_enriched : {"BUY": {...}, "SELL": {...}, "HOLD": {...}}
+        Dove BUY[ticker] = {"size": int, "price": float, "stop": float, "risk": float}
+              SELL[ticker] = {"quantity": int, "price": float, "reason": "STRATEGY SELL"}
+              HOLD[ticker] = {"reason": "KEEP"}  (solo se esiste posizione)
     """
-    max_positions = config.DEFAULT_MAX_POSITIONS
-    risk_per_trade = config.DEFAULT_RISK_PCT_PER_TRADE
-    atr_factor = config.DEFAULT_ATR_MULTIPLIER
+    # Sanity check: df deve essere troncato fino a 'date'
+    try:
+        max_date_in_df = pd.to_datetime(df["date"].max())
+        req_date = pd.to_datetime(date)
+        if max_date_in_df > req_date:
+            raise ValueError(
+                "Il DataFrame fornito contiene date successive a 'date'. "
+                "Il caller deve passare df troncato fino a 'date'."
+            )
+    except KeyError:
+        raise ValueError("Il df passato non contiene la colonna 'date' richiesta.")
 
-    dict_enriched = {"HOLD": {}, "SELL": {}, "BUY": {}}
+    # segnali grezzi
+    raw = _generate_signals_df(strategy_fn, df)
+
+    # container risultato
+    dict_enriched: Dict[str, Dict[str, Any]] = {"BUY": {}, "SELL": {}, "HOLD": {}}
+
+    # Stato temporaneo iniziale (solo una volta)
     temp_positions_count = portfolio.get_positions_count()
     temp_available_cash = portfolio.get_available_cash()
+    
 
+    # Parametri da config
+    max_positions = getattr(config, "DEFAULT_MAX_POSITIONS", 10)
+    risk_pct = getattr(config, "DEFAULT_RISK_PCT_PER_TRADE", 0.02)
+    atr_multiplier = getattr(config, "DEFAULT_ATR_MULTIPLIER", 2.0)
+    atr_period = getattr(config, "DEFAULT_ATR_PERIOD", 14)
 
-    for _, row in df_signals.iterrows():
-        ticker, signal = row["ticker"], row["signal"].upper()
+    # ciclo ticker per ticker
+    for _, row in raw.iterrows():
+        ticker = row["ticker"]
+        signal = row["signal"].upper()
 
+        # prepara df specifico del ticker (già troncato fino a date)
+        df_ticker = df[df["ticker"] == ticker].sort_values("date").reset_index(drop=True)
+        if df_ticker.empty:
+            continue
+
+        # ultimo prezzo di riferimento (close dell'ultima riga)
+        try:
+            price = float(df_ticker["close"].iloc[-1])
+        except Exception:
+            # non posso operare senza prezzo valido
+            continue
+
+        # -----------------------
+        # HOLD
+        # -----------------------
         if signal == "HOLD":
-            new_temp_positions_count, new_temp_available_cash = _process_hold(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash)
-            temp_positions_count = new_temp_positions_count
-            temp_available_cash = new_temp_available_cash
+            pos = portfolio.get_position(ticker)
+            if pos is not None:
+                dict_enriched["HOLD"][ticker] = {"reason": "KEEP"}
+            # nessuna modifica a temp_positions_count / temp_available_cash
+            continue
 
-        elif signal == "SELL":
-            new_temp_positions_count,new_temp_available_cash = _process_sell(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash)
-            temp_positions_count = new_temp_positions_count
-            temp_available_cash = new_temp_available_cash
+        # -----------------------
+        # SELL
+        # -----------------------
+        if signal == "SELL":
+            pos = portfolio.get_position(ticker)
+            if pos is None:
+                # niente da fare, non scriviamo rumore
+                continue
 
-        elif signal == "BUY":
-            new_temp_positions_count,new_temp_available_cash = _process_buy(ticker, portfolio, dict_enriched,
-                            max_positions=max_positions,
-                            risk_per_trade=risk_per_trade,
-                            atr_factor=atr_factor,
-                            temp_positions_count=temp_positions_count,
-                            temp_available_cash=temp_available_cash)
-            temp_positions_count = new_temp_positions_count
-            temp_available_cash = new_temp_available_cash
+            # prezzo di riferimento è quello dal df_ticker
+            dict_enriched["SELL"][ticker] = {
+                "reason": "STRATEGY SELL",
+                "quantity": pos.shares,
+                "price": price
+            }
+            # aggiorno stato temporaneo come se la vendita avvenisse
+            temp_positions_count = max(0, temp_positions_count - 1)
+            temp_available_cash += pos.shares * price
+            continue
 
-            # aggiorna valori temporanei
-            if ticker in dict_enriched["BUY"]:
-                temp_positions_count += 1
-                temp_available_cash -= dict_enriched["BUY"][ticker]["size"] * dict_enriched["BUY"][ticker]["price"]
+        # -----------------------
+        # BUY
+        # -----------------------
+        if signal == "BUY":
+            # rispetto a prima: USO temp_* per decidere (non il portfolio reale)
+            if temp_positions_count >= max_positions:
+                # skip silently
+                continue
+
+            # risk amount calcolato su temp_available_cash 
+            risk_amount = temp_available_cash * risk_pct
+
+            # calcolo ATR sul df_ticker (uso solo i dati già presenti)
+            atr = _calculate_atr_from_df(df_ticker, atr_period)
+            if atr <= 0:
+                # non posso size-are senza ATR valido
+                continue
+
+            risk_distance = atr * atr_multiplier
+            if risk_distance <= 0:
+                continue
+
+            position_size = int(risk_amount / risk_distance)
+            if position_size < 1:
+                continue
+
+            cost = position_size * price
+            if cost > temp_available_cash:
+                # non abbastanza cash secondo lo stato temporaneo -> skip
+                continue
+
+            stop = price - risk_distance
+
+            dict_enriched["BUY"][ticker] = {
+                "size": position_size,
+                "price": price,
+                "stop": stop,
+                "risk": risk_amount
+            }
+
+            # Aggiorno stato temporaneo (come se l'operazione venisse eseguita)
+            temp_positions_count += 1
+            temp_available_cash -= cost
+
+            continue
 
     return dict_enriched
-
-
-# ---------- Helper functions ----------
-
-def _process_hold(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash):
-    pos = portfolio.get_position(ticker)
-    if pos is None:
-        #dict_enriched["HOLD"][ticker] = {"reason": "NO POSITION"}
-        # nessun cambiamento a count/cash
-        return temp_positions_count, temp_available_cash
-
-    if pos.is_stop_loss_hit():
-        dict_enriched["SELL"][ticker] = {
-            "reason": "STOP LOSS",
-            "quantity": pos.shares
-        }
-        # aggiorna temp count e cash
-        temp_positions_count -= 1
-        temp_available_cash += pos.shares * pos.current_price
-    else:
-        dict_enriched["HOLD"][ticker] = {"reason": "KEEP"}
-
-    return temp_positions_count, temp_available_cash
-
-
-def _process_sell(ticker, portfolio, dict_enriched, temp_positions_count, temp_available_cash):
-    pos = portfolio.get_position(ticker)
-    if pos is None:
-        #dict_enriched["SELL"][ticker] = {"reason": "STRATEGY SELL - NO POSITION"}
-        return temp_positions_count, temp_available_cash
-
-    dict_enriched["SELL"][ticker] = {
-        "reason": "STRATEGY SELL",
-        "quantity": pos.shares
-    }
-    # aggiorna temp count e cash
-    temp_positions_count -= 1
-    temp_available_cash += pos.shares * pos.current_price
-
-    return temp_positions_count, temp_available_cash
-
-
-  
-def _calculate_atr(portfolio, ticker, period: int = 14) -> float:
-    """
-    Calcola Average True Range per un DataFrame con OHLC.
-    
-    Args:
-        df: DataFrame con columns high, low, close
-        period: Periodo per media mobile ATR
-        
-    Returns:
-        ATR value
-    """
-    
-    end_date = portfolio.date
-    start_date = end_date - timedelta(days=period)
-
-
-    #logger.info(f"start_date : {start_date}")
-    #logger.info(f"end_date : {end_date}")
-
-    df = get_universe_data(start_date=start_date, end_date=end_date, tickers=ticker)
-    #logger.info(f"Data for ATR calculation for {ticker}: {df}")
-    
-    if len(df) < 2:
-        return 0.0
-    
-    df = df.sort_values('date').copy()
-    
-    
-    # True Range = max(high-low, high-prev_close, prev_close-low)
-    df['prev_close'] = df['close'].shift(1)
-    df['tr1'] = df['high'] - df['low']
-    df['tr2'] = abs(df['high'] - df['prev_close'])
-    df['tr3'] = abs(df['low'] - df['prev_close'])
-    df['true_range'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
-    
-    # ATR = media mobile del True Range
-    atr = df['true_range'].tail(min(period, len(df))).mean()
-    
-    return float(atr) if pd.notna(atr) else 0.0
-
-
-def _process_buy(ticker, portfolio, dict_enriched, max_positions, risk_per_trade, atr_factor, temp_positions_count, temp_available_cash):
-    #logger.info(f"Processing BUY for ticker {ticker}")
-
-    positions_count = portfolio.get_positions_count()
-    #logger.info(f"Current positions count: {positions_count} / Max allowed: {max_positions}")
-    if positions_count >= max_positions:
-        logger.info(f"Max positions reached, skipping BUY for {ticker}")
-        return temp_positions_count, temp_available_cash
-
-    available_cash = portfolio.get_available_cash()
-    #logger.info(f"Available cash: {available_cash}")
-
-    risk_amount = available_cash * risk_per_trade
-    #logger.info(f"Risk amount ({risk_per_trade*100:.2f}% of total value): {risk_amount}")
-
-    # Calcolo ATR
-    atr = _calculate_atr(portfolio, ticker)
-    #logger.info(f"ATR for {ticker}: {atr}")
-    if atr == 0:
-        logger.warning(f"ATR is zero for {ticker}, cannot calculate position size")
-        return temp_positions_count, temp_available_cash
-
-    risk_distance = atr * atr_factor
-    #logger.info(f"Risk distance (ATR * factor {atr_factor}): {risk_distance}")
-    if risk_distance == 0:
-        logger.warning(f"Risk distance is zero for {ticker}, skipping BUY")
-        return temp_positions_count, temp_available_cash
-
-    price = float(get_last_close(ticker))
-    #logger.info(f"Last close price for {ticker}: {price}")
-
-    position_size = risk_amount / risk_distance
-    #logger.info(f"Calculated position size before cash check: {position_size}")
-
-    # Controllo cash disponibile
-    if position_size < 1 or position_size * price > available_cash:
-        logger.info(f"Position size too small or exceeds available cash, skipping BUY for {ticker}")
-        return temp_positions_count, temp_available_cash
-
-    stop = price - risk_distance
-    dict_enriched["BUY"][ticker] = {
-        "size": int(position_size),
-        "price": price,
-        "stop": stop,
-        "risk": risk_amount
-    }
-
-    logger.info(f"BUY signal prepared for {ticker}: {dict_enriched['BUY'][ticker]}")
-
-    temp_positions_count += 1
-    temp_available_cash += int(position_size) * price
-    
-    return temp_positions_count, temp_available_cash

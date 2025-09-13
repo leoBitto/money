@@ -160,13 +160,36 @@ EXECUTION_FREQUENCY = "weekly"       # "daily" or "weekly"
 # =========================
 DEFAULT_PORTFOLIO_NAME = "default"
 
+
 # =============================================================================
-# BACKTESTING (Future)
+# BACKTEST CONFIGURATION  
 # =============================================================================
-# Placeholder for backtesting parameters
-BACKTEST_START_DATE = "2023-01-01"
-BACKTEST_INITIAL_CAPITAL = 100000  # $100k
-BACKTEST_COMMISSION = 0.001  # 0.1% commission per trade
+
+# Backtest execution timing
+BACKTEST_EXECUTION_DAY = 4  # 0=Monday, 4=Friday - giorno per analisi segnali
+BACKTEST_TRADE_DAY = 0      # 0=Monday - giorno per esecuzione trade
+
+# Backtest data management
+BACKTEST_SAVE_DAILY_SNAPSHOTS = True   # Salva snapshot ogni giorno
+BACKTEST_SAVE_WEEKLY_SNAPSHOTS = True  # Salva snapshot settimanali
+BACKTEST_CALCULATE_METRICS = True      # Calcola metriche performance
+
+# Backtest validation  
+BACKTEST_MIN_DATA_DAYS = 30            # Minimo giorni dati per iniziare backtest
+BACKTEST_SKIP_HOLIDAYS = True          # Salta giorni festivi automaticamente
+
+# Backtest logging
+BACKTEST_LOG_LEVEL = 'INFO'
+BACKTEST_LOG_TRADES = True
+BACKTEST_LOG_SIGNALS = False           # Può essere verboso
+
+# Backtest default parameters
+BACKTEST_DEFAULT_INITIAL_CASH = 10000.0
+BACKTEST_DEFAULT_COMMISSION = 0.0       # Commissioni per trade (per ora 0)
+
+# Performance calculation
+BACKTEST_RISK_FREE_RATE = 0.02         # Tasso risk-free per Sharpe ratio
+BACKTEST_BENCHMARK_RETURN = 0.08       # Return benchmark per confronti
 
 
 # =============================================================================

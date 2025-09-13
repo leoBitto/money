@@ -88,29 +88,103 @@ def get_available_tickers() -> List[str]:
     rows = execute_query(query)
     return [row[0] for row in rows]
 
-def get_last_close(ticker: str) -> Optional[float]:
+def get_last_close(ticker: str, date: str = None) -> Optional[float]:
     """
-    Ritorna l'ultimo prezzo di chiusura per un ticker dal database UNIVERSE.
+    Ritorna l'ultimo prezzo di chiusura per un ticker.
     
     Parameters
     ----------
     ticker : str
         Il simbolo del titolo (es. "AAPL").
+    date : str, optional
+        Data limite (YYYY-MM-DD). Se None, usa l'ultima data disponibile.
     
     Returns
     -------
     close : float | None
         L'ultimo prezzo di chiusura, oppure None se il ticker non esiste.
     """
-    query = """
-        SELECT date, close
-        FROM UNIVERSE
-        WHERE ticker = %s
-        ORDER BY date DESC
-        LIMIT 1
-    """
-    rows, _ = execute_query(query, (ticker,))
+    if date is None:
+        query = """
+            SELECT date, close
+            FROM UNIVERSE
+            WHERE ticker = %s
+            ORDER BY date DESC
+            LIMIT 1
+        """
+        params = (ticker,)
+    else:
+        query = """
+            SELECT date, close
+            FROM UNIVERSE
+            WHERE ticker = %s AND date <= %s
+            ORDER BY date DESC
+            LIMIT 1
+        """
+        params = (ticker, date)
+    
+    rows, _ = execute_query(query, params)
     return rows[0][1] if rows else None
+
+
+def get_business_days_between(start_date: str, end_date: str) -> List[str]:
+    """
+    Ritorna lista di giorni lavorativi tra due date (esclude weekend).
+    
+    Parameters
+    ----------
+    start_date : str
+        Data inizio (YYYY-MM-DD)
+    end_date : str  
+        Data fine (YYYY-MM-DD)
+        
+    Returns
+    -------
+    List[str]
+        Lista di date in formato YYYY-MM-DD
+    """
+    from datetime import datetime, timedelta
+    
+    start = datetime.strptime(start_date, '%Y-%m-%d')
+    end = datetime.strptime(end_date, '%Y-%m-%d')
+    
+    business_days = []
+    current = start
+    
+    while current <= end:
+        # 0=Monday, 6=Sunday -> escludiamo 5=Saturday, 6=Sunday
+        if current.weekday() < 5:
+            business_days.append(current.strftime('%Y-%m-%d'))
+        current += timedelta(days=1)
+    
+    return business_days
+
+def get_available_dates_in_universe(start_date: str = None, end_date: str = None) -> List[str]:
+    """
+    Ritorna le date effettivamente disponibili nel DB universe.
+    Utile per sincronizzare il backtest con i dati reali.
+    """
+    conditions = []
+    params = []
+    
+    if start_date:
+        conditions.append("date >= %s")
+        params.append(start_date)
+    if end_date:
+        conditions.append("date <= %s") 
+        params.append(end_date)
+        
+    where_clause = " AND ".join(conditions) if conditions else "TRUE"
+    
+    query = f"""
+        SELECT DISTINCT date 
+        FROM universe 
+        WHERE {where_clause}
+        ORDER BY date
+    """
+    
+    rows, _ = execute_query(query, tuple(params))
+    return [row[0].strftime('%Y-%m-%d') for row in rows]
 
 def get_universe_data(start_date: Optional[str] = None,
                       end_date: Optional[str] = None,

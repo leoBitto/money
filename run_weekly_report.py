@@ -123,6 +123,20 @@ def main():
             print("❌ Nessun dato trovato!")
         print("="*60 + "\n")
 
+        print("\n" + "="*80)
+        print("🎯 TUTTI I SEGNALI GENERATI:")
+        print("="*80)
+        for strategy_name, signals_df in all_signals.items():
+            print(f"\n📊 STRATEGIA: {strategy_name}")
+            print("-" * 50)
+            if not signals_df.empty:
+                print(f"Segnali totali: {len(signals_df)}")
+                print(signals_df.to_string(index=False))
+            else:
+                print("❌ Nessun segnale generato")
+            print("-" * 50)
+        print("="*80 + "\n")
+
         # 6. SCRIVI GOOGLE SHEET
 #        logger.info("📝 Scrittura Google Sheet...")
 #        sheet_url = _write_to_google_sheet(all_signals, portfolio_df)

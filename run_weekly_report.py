@@ -290,16 +290,17 @@ def _write_to_google_sheet(all_signals: dict, portfolio_df: pd.DataFrame) -> str
     spreadsheet = client.open_by_key(config.WEEKLY_REPORTS_SHEET_ID)
     logger.info(f"Aperto sheet: {spreadsheet.title}")
     
-    # Cancella tutti i fogli esistenti
-    for ws in spreadsheet.worksheets():
-        try:
-            spreadsheet.del_worksheet(ws)
-            logger.info(f"Cancellato foglio: {ws.title}")
-        except Exception as e:
-            logger.warning(f"Errore cancellando foglio {ws.title}: {e}")
-    
     # Foglio portfolio
-    portfolio_ws = spreadsheet.add_worksheet(title="Portfolio_Snapshots", rows=50, cols=15)
+    try:
+        # Prima PROVA a trovare il foglio esistente
+        portfolio_ws = spreadsheet.worksheet("Portfolio_Snapshots")
+        portfolio_ws.clear()  # Svuotalo
+        logger.info("Trovato e svuotato foglio Portfolio_Snapshots esistente")
+    except:
+        # Solo se NON esiste, crealo
+        portfolio_ws = spreadsheet.add_worksheet(title="Portfolio_Snapshots", rows=50, cols=15)
+        logger.info("Creato nuovo foglio Portfolio_Snapshots")
+
     if not portfolio_df.empty:
         data_to_write = df_to_sheets_data(portfolio_df)
         portfolio_ws.update(data_to_write)
@@ -308,9 +309,18 @@ def _write_to_google_sheet(all_signals: dict, portfolio_df: pd.DataFrame) -> str
         portfolio_ws.update([["Nessun dato disponibile"]])
         logger.info("Portfolio vuoto")
     
-    # Fogli strategie
+    # Fogli strategie - trova o crea e svuota
     for strategy_name, signals_df in all_signals.items():
-        ws = spreadsheet.add_worksheet(title=strategy_name, rows=100, cols=10)
+        try:
+            ws = spreadsheet.worksheet(strategy_name)
+            # Svuota il foglio esistente
+            ws.clear()
+            logger.info(f"Svuotato foglio {strategy_name} esistente")
+        except:
+            # Crea nuovo foglio se non esiste
+            ws = spreadsheet.add_worksheet(title=strategy_name, rows=100, cols=10)
+            logger.info(f"Creato nuovo foglio {strategy_name}")
+        
         if not signals_df.empty:
             data_to_write = df_to_sheets_data(signals_df)
             ws.update(data_to_write)

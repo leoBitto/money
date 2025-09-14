@@ -111,6 +111,18 @@ def main():
         logger.info("📸 Caricamento portfolio snapshots settimana...")
         portfolio_df = _get_portfolio_snapshots_week(portfolio_name, today)
         
+        print("\n" + "="*60)
+        print("📊 PORTFOLIO SNAPSHOTS SETTIMANA:")
+        print("="*60)
+        if not portfolio_df.empty:
+            print(f"Righe: {len(portfolio_df)}")
+            print(f"Colonne: {list(portfolio_df.columns)}")
+            print("\nDati:")
+            print(portfolio_df.to_string(index=False))
+        else:
+            print("❌ Nessun dato trovato!")
+        print("="*60 + "\n")
+
         # 6. SCRIVI GOOGLE SHEET
 #        logger.info("📝 Scrittura Google Sheet...")
 #        sheet_url = _write_to_google_sheet(all_signals, portfolio_df)

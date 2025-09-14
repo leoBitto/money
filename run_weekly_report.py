@@ -112,8 +112,8 @@ def main():
         portfolio_df = _get_portfolio_snapshots_week(portfolio_name, today)
         
         # 6. SCRIVI GOOGLE SHEET
-        logger.info("📝 Scrittura Google Sheet...")
-        sheet_url = _write_to_google_sheet(all_signals, portfolio_df)
+#        logger.info("📝 Scrittura Google Sheet...")
+#        sheet_url = _write_to_google_sheet(all_signals, portfolio_df)
         
         # SUCCESS
         duration = datetime.now() - start_time
@@ -123,7 +123,7 @@ def main():
         logger.info(f"Strategie processate: {len(all_signals)}")
         logger.info(f"Portfolio snapshots: {len(portfolio_df)} giorni")
         logger.info(f"Durata: {duration.total_seconds():.1f} secondi")
-        logger.info(f"Google Sheet: {sheet_url}")
+       # logger.info(f"Google Sheet: {sheet_url}")
         logger.info("📊 REPORT PRONTO PER REVIEW!")
         logger.info("=" * 60)
         

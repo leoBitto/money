@@ -138,8 +138,8 @@ def main():
         print("="*80 + "\n")
 
         # 6. SCRIVI GOOGLE SHEET
-#        logger.info("📝 Scrittura Google Sheet...")
-#        sheet_url = _write_to_google_sheet(all_signals, portfolio_df)
+        logger.info("📝 Scrittura Google Sheet...")
+        sheet_url = _write_to_google_sheet(all_signals, portfolio_df)
         
         # SUCCESS
         duration = datetime.now() - start_time
@@ -149,7 +149,7 @@ def main():
         logger.info(f"Strategie processate: {len(all_signals)}")
         logger.info(f"Portfolio snapshots: {len(portfolio_df)} giorni")
         logger.info(f"Durata: {duration.total_seconds():.1f} secondi")
-       # logger.info(f"Google Sheet: {sheet_url}")
+        logger.info(f"Google Sheet: {sheet_url}")
         logger.info("📊 REPORT PRONTO PER REVIEW!")
         logger.info("=" * 60)
         
@@ -258,6 +258,32 @@ def _get_portfolio_snapshots_week(portfolio_name: str, today_str: str) -> pd.Dat
 def _write_to_google_sheet(all_signals: dict, portfolio_df: pd.DataFrame) -> str:
     """Scrive tutti i dati nel Google Sheet configurato."""
     from scripts import google_services, config
+    from decimal import Decimal
+    
+    def convert_for_sheets(value):
+        """Converte un valore per essere sicuro con Google Sheets."""
+        if isinstance(value, Decimal):
+            return float(value)
+        elif pd.isna(value):
+            return ""
+        else:
+            return value
+    
+    def df_to_sheets_data(df):
+        """Converte DataFrame in formato sicuro per Google Sheets."""
+        if df.empty:
+            return []
+        
+        # Headers
+        headers = df.columns.tolist()
+        
+        # Dati - conversione riga per riga, cella per cella
+        rows = []
+        for _, row in df.iterrows():
+            converted_row = [convert_for_sheets(value) for value in row]
+            rows.append(converted_row)
+        
+        return [headers] + rows
     
     logger.info("Apertura Google Sheet...")
     client = google_services.get_gsheet_client()
@@ -275,20 +301,25 @@ def _write_to_google_sheet(all_signals: dict, portfolio_df: pd.DataFrame) -> str
     # Foglio portfolio
     portfolio_ws = spreadsheet.add_worksheet(title="Portfolio_Snapshots", rows=50, cols=15)
     if not portfolio_df.empty:
-        data_to_write = [portfolio_df.columns.tolist()] + portfolio_df.values.tolist()
+        data_to_write = df_to_sheets_data(portfolio_df)
         portfolio_ws.update(data_to_write)
+        logger.info(f"Scritto portfolio: {len(data_to_write)-1} righe di dati")
     else:
         portfolio_ws.update([["Nessun dato disponibile"]])
+        logger.info("Portfolio vuoto")
     
     # Fogli strategie
     for strategy_name, signals_df in all_signals.items():
         ws = spreadsheet.add_worksheet(title=strategy_name, rows=100, cols=10)
         if not signals_df.empty:
-            data_to_write = [signals_df.columns.tolist()] + signals_df.values.tolist()
+            data_to_write = df_to_sheets_data(signals_df)
             ws.update(data_to_write)
+            logger.info(f"Scritto {strategy_name}: {len(data_to_write)-1} righe di dati")
         else:
             ws.update([["Nessun segnale generato"]])
+            logger.info(f"Strategia {strategy_name}: nessun segnale")
     
+    logger.info(f"✅ Google Sheet completato: {len(all_signals)} strategie + portfolio")
     return spreadsheet.url
 
 

@@ -1,4 +1,4 @@
-# run_weekly_report.py - Versione Finale
+# run_weekly_report.py - Versione con argparse
 """
 Entry Point: Report Settimanale Portfolio
 =========================================
@@ -11,13 +11,14 @@ Workflow semplice e automatico:
 5. Crea N fogli strategia + 1 foglio portfolio snapshots (lun-ven)
 6. Fine!
 
-Eseguito ogni venerdì.
+Eseguito ogni venerdì tramite systemd.
 """
 
 import logging
 import os
 import sys
 import inspect
+import argparse
 from datetime import datetime, timedelta
 import pandas as pd
 
@@ -35,8 +36,29 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def parse_args():
+    """Parsa argomenti CLI."""
+    parser = argparse.ArgumentParser(description="Generatore Report Settimanale")
+    parser.add_argument(
+        "--portfolio",
+        required=True,
+        help="Nome del portfolio da usare per generare il report"
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        default=60,
+        help="Numero di giorni di storico da caricare (default=60)"
+    )
+    return parser.parse_args()
+
+
 def main():
     """Entry point per generazione report settimanale."""
+    args = parse_args()
+    portfolio_name = args.portfolio
+    days_back = args.days
+
     start_time = datetime.now()
     today = start_time.strftime("%Y-%m-%d")
     
@@ -44,22 +66,23 @@ def main():
     logger.info("🚀 AVVIO REPORT SETTIMANALE")
     logger.info("=" * 60)
     logger.info(f"Data: {today}")
+    logger.info(f"Portfolio scelto: {portfolio_name}")
+    logger.info(f"Giorni di storico: {days_back}")
     
     try:
-        from scripts import database, portfolio, strategies, risk_manager, google_services
-        from scripts import config
+        from scripts import database, portfolio, strategies, risk_manager, google_services, config
         
         # 1. SCOPRI STRATEGIE AUTOMATICAMENTE
         strategy_functions = _discover_strategy_functions()
         logger.info(f"🎯 Strategie scoperte: {list(strategy_functions.keys())}")
         
-        # 2. CARICA PORTFOLIO DEMO
-        logger.info("📊 Caricamento portfolio 'demo'...")
-        pf = portfolio.Portfolio("demo", today)
-        logger.info(f"Portfolio: valore=€{pf.get_total_value():,.2f}, cash=€{pf.get_cash_balance():,.2f}")
+        # 2. CARICA PORTFOLIO
+        logger.info(f"📊 Caricamento portfolio '{portfolio_name}'...")
+        pf = portfolio.Portfolio(portfolio_name, today)
+        logger.info(f"Portfolio {portfolio_name}: valore=€{pf.get_total_value():,.2f}, cash=€{pf.get_cash_balance():,.2f}")
         
-        # 3. CARICA DATI UNIVERSE (ultimi 60 giorni per sicurezza)
-        days_ago = (datetime.now() - timedelta(days=60)).strftime("%Y-%m-%d")
+        # 3. CARICA DATI UNIVERSE
+        days_ago = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         logger.info(f"📈 Caricamento dati universe dal {days_ago}...")
         df = database.get_universe_data(start_date=days_ago, end_date=today)
         logger.info(f"Dati: {len(df)} righe, {df['ticker'].nunique()} ticker")
@@ -114,17 +137,12 @@ def _discover_strategy_functions():
     from scripts import strategies
     
     strategy_functions = {}
-    
-    # Scandisce tutti gli attributi del modulo strategies
     for name in dir(strategies):
         obj = getattr(strategies, name)
-        
-        # Controlla se è una funzione (non classe, non built-in, non privata)
         if (inspect.isfunction(obj) and 
             not name.startswith('_') and 
             obj.__module__ == strategies.__name__):
             strategy_functions[name] = obj
-    
     return strategy_functions
 
 
@@ -172,7 +190,6 @@ def _convert_signals_to_dataframe(signals: dict, strategy_name: str) -> pd.DataF
         })
     
     if not rows:
-        # Se non ci sono segnali, crea DataFrame con intestazioni vuote
         return pd.DataFrame(columns=["Ticker", "Signal", "Strategy", "Size", "Price", 
                                    "Stop_Loss", "Risk_Amount", "Notes"])
     
@@ -180,12 +197,11 @@ def _convert_signals_to_dataframe(signals: dict, strategy_name: str) -> pd.DataF
 
 
 def _get_portfolio_snapshots_week(portfolio_name: str, today_str: str) -> pd.DataFrame:
-    """Recupera snapshots portfolio da lunedì a venerdì (today-5 giorni lavorativi)."""
+    """Recupera snapshots portfolio da lunedì a venerdì (oggi è venerdì)."""
     from scripts import database
     
-    # Calcola lunedì della settimana corrente (oggi è venerdì)
     today = datetime.strptime(today_str, "%Y-%m-%d")
-    monday = today - timedelta(days=4)  # Venerdì - 4 giorni = Lunedì
+    monday = today - timedelta(days=4)
     
     start_date = monday.strftime("%Y-%m-%d")
     end_date = today_str
@@ -203,16 +219,11 @@ def _get_portfolio_snapshots_week(portfolio_name: str, today_str: str) -> pd.Dat
     try:
         rows, columns = database.execute_query(query, (portfolio_name, start_date, end_date))
         df = pd.DataFrame(rows, columns=columns)
-        
-        # Converti date in stringhe per Google Sheets
         if not df.empty and 'date' in df.columns:
             df['date'] = df['date'].astype(str)
-        
         return df
-        
     except Exception as e:
         logger.error(f"Errore caricamento snapshots: {e}")
-        # Ritorna DataFrame vuoto con colonne corrette
         return pd.DataFrame(columns=["date", "total_value", "cash_balance", "positions_count",
                                    "total_return_pct", "max_drawdown_pct", "volatility_pct", 
                                    "sharpe_ratio", "win_rate_pct"])
@@ -224,50 +235,34 @@ def _write_to_google_sheet(all_signals: dict, portfolio_df: pd.DataFrame) -> str
     
     logger.info("Apertura Google Sheet...")
     client = google_services.get_gsheet_client()
-    
-    # Apri sheet configurato
     spreadsheet = client.open_by_key(config.WEEKLY_REPORTS_SHEET_ID)
     logger.info(f"Aperto sheet: {spreadsheet.title}")
     
-    # CANCELLA TUTTI I FOGLI ESISTENTI
-    worksheets = spreadsheet.worksheets()
-    for ws in worksheets:
+    # Cancella tutti i fogli esistenti
+    for ws in spreadsheet.worksheets():
         try:
             spreadsheet.del_worksheet(ws)
             logger.info(f"Cancellato foglio: {ws.title}")
         except Exception as e:
             logger.warning(f"Errore cancellando foglio {ws.title}: {e}")
     
-    # CREA FOGLIO PORTFOLIO SNAPSHOTS
-    logger.info("Creazione foglio Portfolio_Snapshots...")
+    # Foglio portfolio
     portfolio_ws = spreadsheet.add_worksheet(title="Portfolio_Snapshots", rows=50, cols=15)
-    
     if not portfolio_df.empty:
-        # Scrivi intestazioni + dati
         data_to_write = [portfolio_df.columns.tolist()] + portfolio_df.values.tolist()
         portfolio_ws.update(data_to_write)
-        logger.info(f"Scritti {len(portfolio_df)} snapshots portfolio")
     else:
         portfolio_ws.update([["Nessun dato disponibile"]])
-        logger.warning("Nessun snapshot portfolio disponibile")
     
-    # CREA FOGLIO PER OGNI STRATEGIA
+    # Fogli strategie
     for strategy_name, signals_df in all_signals.items():
-        logger.info(f"Creazione foglio: {strategy_name}")
-        
-        # Crea worksheet
         ws = spreadsheet.add_worksheet(title=strategy_name, rows=100, cols=10)
-        
         if not signals_df.empty:
-            # Scrivi intestazioni + dati
             data_to_write = [signals_df.columns.tolist()] + signals_df.values.tolist()
             ws.update(data_to_write)
-            logger.info(f"Scritti {len(signals_df)} segnali per {strategy_name}")
         else:
             ws.update([["Nessun segnale generato"]])
-            logger.warning(f"Nessun segnale per strategia {strategy_name}")
     
-    logger.info(f"✅ Google Sheet aggiornato: {len(all_signals)} strategie + 1 portfolio")
     return spreadsheet.url
 
 

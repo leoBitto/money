@@ -49,7 +49,7 @@ def main():
     parser.add_argument('strategy', help='Nome strategia (es: moving_average_crossover)')
     parser.add_argument('--start-date', default=config.BACKTEST_START_DATE,
                        help='Data inizio (YYYY-MM-DD)')
-    parser.add_argument('--end-date', default='2024-12-31',
+    parser.add_argument('--end-date', default=datetime.now().strftime('%Y-%m-%d'),
                        help='Data fine (YYYY-MM-DD)')
     parser.add_argument('--capital', type=float, default=10000.0,
                        help='Capitale iniziale')

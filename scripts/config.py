@@ -164,7 +164,7 @@ DEFAULT_PORTFOLIO_NAME = "default"
 # =============================================================================
 # BACKTEST CONFIGURATION  
 # =============================================================================
-
+BACKTEST_START_DATE ="2022-01-01"
 # Backtest execution timing
 BACKTEST_EXECUTION_DAY = 4  # 0=Monday, 4=Friday - giorno per analisi segnali
 BACKTEST_TRADE_DAY = 0      # 0=Monday - giorno per esecuzione trade

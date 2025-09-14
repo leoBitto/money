@@ -37,7 +37,7 @@ def run_backtest(
         Colonne: [date, cash, positions_value, total_value, trades]
     """
     # Setup
-    portfolio = Portfolio("backtest", start_date, initial_cash, backtest=True)
+    portfolio = Portfolio.create("backtest", start_date, initial_cash, backtest=True)
 
     # Carica tutto il dataset una sola volta
     df = database.load_price_history(start_date, end_date)

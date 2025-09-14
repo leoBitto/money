@@ -178,25 +178,35 @@ def _convert_signals_to_dataframe(signals: dict, strategy_name: str) -> pd.DataF
     
     # BUY signals
     for ticker, data in signals.get("BUY", {}).items():
+        size = float(data.get("size", 0)) if isinstance(data.get("size", 0), Decimal) else data.get("size", 0)
+        price = float(data.get("price", 0)) if isinstance(data.get("price", 0), Decimal) else data.get("price", 0)
+        total_value = size * price if size and price else 0
+        
         rows.append({
             "Ticker": ticker,
             "Signal": "BUY",
             "Strategy": strategy_name,
-            "Size": data.get("size", 0),
-            "Price": data.get("price", 0),
-            "Stop_Loss": data.get("stop", 0),
-            "Risk_Amount": data.get("risk", 0),
-            "Notes": f"Size: {data.get('size', 0)} shares at €{data.get('price', 0):.2f}"
+            "Size": size,
+            "Price": price,
+            "Total_Value": total_value, 
+            "Stop_Loss": float(data.get("stop", 0)) if isinstance(data.get("stop", 0), Decimal) else data.get("stop", 0),
+            "Risk_Amount": float(data.get("risk", 0)) if isinstance(data.get("risk", 0), Decimal) else data.get("risk", 0),
+            "Notes": f"Size: {size} shares at €{price:.2f} = €{total_value:.2f}"
         })
     
     # SELL signals
     for ticker, data in signals.get("SELL", {}).items():
+        size = float(data.get("quantity", 0)) if isinstance(data.get("quantity", 0), Decimal) else data.get("quantity", 0)
+        price = float(data.get("price", 0)) if isinstance(data.get("price", 0), Decimal) else data.get("price", 0)
+        total_value = size * price if size and price else 0
+        
         rows.append({
             "Ticker": ticker,
             "Signal": "SELL",
             "Strategy": strategy_name,
-            "Size": data.get("quantity", 0),
-            "Price": data.get("price", 0),
+            "Size": size,
+            "Price": price,
+            "Total_Value": total_value,  
             "Stop_Loss": "",
             "Risk_Amount": "",
             "Notes": data.get("reason", "Strategy sell")
@@ -210,6 +220,7 @@ def _convert_signals_to_dataframe(signals: dict, strategy_name: str) -> pd.DataF
             "Strategy": strategy_name,
             "Size": "",
             "Price": "",
+            "Total_Value": "", 
             "Stop_Loss": "",
             "Risk_Amount": "",
             "Notes": data.get("reason", "Keep position")
@@ -217,9 +228,10 @@ def _convert_signals_to_dataframe(signals: dict, strategy_name: str) -> pd.DataF
     
     if not rows:
         return pd.DataFrame(columns=["Ticker", "Signal", "Strategy", "Size", "Price", 
-                                   "Stop_Loss", "Risk_Amount", "Notes"])
+                                   "Total_Value", "Stop_Loss", "Risk_Amount", "Notes"])  
     
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows)
+    return _convert_decimals_to_float(df)
 
 
 def _get_portfolio_snapshots_week(portfolio_name: str, today_str: str) -> pd.DataFrame:

@@ -47,8 +47,8 @@ def parse_args():
     parser.add_argument(
         "--days",
         type=int,
-        default=60,
-        help="Numero di giorni di storico da caricare (default=60)"
+        default=120,
+        help="Numero di giorni di storico da caricare (default=120)"
     )
     return parser.parse_args()
 

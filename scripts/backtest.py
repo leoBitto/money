@@ -40,7 +40,8 @@ def run_backtest(
     portfolio = Portfolio.create("backtest", start_date, initial_cash, backtest=True)
 
     # Carica tutto il dataset una sola volta
-    df = database.load_price_history(start_date, end_date)
+    tickers = database.get_available_tickers()
+    df = database.get_universe_data(start_date, end_date, tickers)
 
     analysis_dates, execution_dates = _generate_calendar(start_date, end_date)
     records = []

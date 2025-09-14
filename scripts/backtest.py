@@ -37,7 +37,7 @@ def run_backtest(
         Colonne: [date, cash, positions_value, total_value, trades]
     """
     # Setup
-    portfolio = Portfolio.create("backtest", start_date, initial_cash, backtest=True)
+    portfolio = Portfolio.create(f"backtest_{datetime.now().strftime('%Y%m%d%H%M')}", start_date, initial_cash, backtest=True)
 
     # Carica tutto il dataset una sola volta
     tickers = database.get_available_tickers()

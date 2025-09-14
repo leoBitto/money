@@ -129,7 +129,7 @@ class Portfolio:
         logger.info(f"Portfolio '{name}' caricato per {self.date} (backtest={backtest})")
 
     # ----------------------------
-    # CREATION / DELETE
+    # CREATION / DELETE / UPDATE
     # ----------------------------
 
     @classmethod
@@ -189,6 +189,42 @@ class Portfolio:
         except Exception as e:
             logger.error(f"Errore nell'eliminare portfolio '{name}': {e}")
             return False
+
+    def update_to_date(self, new_date: str) -> None:
+        """
+        Aggiorna il portfolio ad una nuova data.
+        Riutilizza tutti i metodi esistenti, semplicemente li coordina.
+        """
+        logger.info(f"Aggiornamento portfolio '{self.name}' alla data {new_date}")
+        
+        # Cambia la data del portfolio (così _save_to_db salverà alla nuova data)
+        old_date = self.date
+        self.date = new_date
+        
+        # Aggiorna prezzi di tutte le posizioni attive
+        updated_positions = 0
+        for ticker, position in self._positions.items():
+            if position.shares > 0:  # Solo posizioni attive
+                try:
+                    # Usa il metodo esistente _get_current_price (che ora userà new_date)
+                    new_price = self._get_current_price(ticker)
+                    position.current_price = new_price
+                    
+                    # Salva posizione con metodo esistente
+                    position._save_to_db()
+                    updated_positions += 1
+                    
+                except Exception as e:
+                    logger.warning(f"Errore aggiornando {ticker}: {e}")
+        
+        # Ricalcola valore totale
+        self._recalculate_total_value()
+        
+        # Salva snapshot con metodo esistente  
+        self._save_to_db()
+        
+        logger.info(f"Portfolio aggiornato da {old_date} a {new_date}: "
+                f"{updated_positions} posizioni, valore=€{self.get_total_value():,.2f}")
 
     # ----------------------------
     # CASH / VALUE ACCESS

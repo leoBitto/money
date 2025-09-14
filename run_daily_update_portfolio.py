@@ -1,10 +1,9 @@
-# run_daily_update_portfolio.py
+# run_daily_update_portfolio.py - Ultra Semplificato
 import logging
 import os
 from datetime import datetime
 
-from scripts import config
-from scripts.portfolio import Portfolio, get_portfolio_names
+from scripts.portfolio import get_portfolio_names, Portfolio
 
 # Setup logging
 os.makedirs("logs", exist_ok=True)
@@ -30,20 +29,16 @@ def main():
             logging.info(f"📊 Aggiornamento portfolio: {name}")
 
             try:
-                pf = Portfolio(name, today)
-
-                # Aggiorna ogni posizione
-                for pos in pf._positions.values():
-                    pos.current_price = pf._get_current_price(pos.ticker)
-                    pos._save_to_db()
-
-                # Aggiorna snapshot
-                pf._update_snapshot()
+                # Carica portfolio (ultima data disponibile)
+                pf = Portfolio(name)
+                
+                # Una sola riga fa tutto!
+                pf.update_to_date(today)
 
                 logging.info(
                     f"✅ Portfolio {name} aggiornato: "
-                    f"valore={pf.get_total_value():,.2f}, "
-                    f"cash={pf.get_cash_balance():,.2f}, "
+                    f"valore=€{pf.get_total_value():,.2f}, "
+                    f"cash=€{pf.get_cash_balance():,.2f}, "
                     f"posizioni={pf.get_positions_count()}"
                 )
 
